@@ -75,10 +75,10 @@
  * Public Data
  ****************************************************************************/
 
-bool g_debug;
-char g_line[LINESIZE + 1];
-char g_parm[MAX_FIELDS][MAX_PARMSIZE];
-int g_lineno;
+static bool g_debug;
+static char g_line[LINESIZE + 1];
+static char g_parm[MAX_FIELDS][MAX_PARMSIZE];
+static int g_lineno;
 
 /****************************************************************************
  * Private Functions
@@ -159,6 +159,46 @@ static char *find_parm(char *ptr)
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: set_debug
+ ****************************************************************************/
+
+void set_debug(bool debug)
+{
+	g_debug = debug;
+}
+
+/****************************************************************************
+ * Name: get_parm
+ ****************************************************************************/
+
+char *get_parm(unsigned int field)
+{
+	if (field >= MAX_FIELDS) {
+		return NULL;
+	}
+
+	return g_parm[field];
+}
+
+/****************************************************************************
+ * Name: get_lineno
+ ****************************************************************************/
+
+int get_lineno(void)
+{
+	return g_lineno;
+}
+
+/****************************************************************************
+ * Name: get_line
+ ****************************************************************************/
+
+char *get_line(void)
+{
+	return g_line;
+}
+
+/****************************************************************************
  * Name: read_line
  ****************************************************************************/
 
@@ -209,6 +249,10 @@ int parse_csvline(char *ptr)
 	 */
 
 	do {
+		if (nparms >= MAX_FIELDS) {
+			fprintf(stderr, "%d: too many Parameters: \"%s\"\n", g_lineno, g_line);
+			exit(8);
+		}
 		ptr = copy_parm(ptr, &g_parm[nparms][0]);
 		nparms++;
 		ptr = find_parm(ptr);

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright 2016 Samsung Electronics All Rights Reserved.
+ * Copyright 2017 Samsung Electronics All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@
  *
  ****************************************************************************/
 
+#include <unistd.h>
 #include <fcntl.h>
 #include <tinyara/gpio.h>
 
@@ -59,9 +60,17 @@ static int gpio_read(int port)
 	char devpath[16];
 	snprintf(devpath, 16, "/dev/gpio%d", port);
 	int fd = open(devpath, O_RDWR);
+	if (fd < 0) {
+		printf("fd open fail\n");
+		return -1;
+	}
 
 	ioctl(fd, GPIOIOC_SET_DIRECTION, GPIO_DIRECTION_IN);
-	read(fd, buf, sizeof(buf));
+	if (read(fd, buf, sizeof(buf)) < 0) {
+		printf("read error\n");
+		close(fd);
+		return -1;
+	}
 	close(fd);
 
 	return buf[0] == '1';
@@ -73,9 +82,15 @@ static void gpio_write(int port, int value)
 	char devpath[16];
 	snprintf(devpath, 16, "/dev/gpio%d", port);
 	int fd = open(devpath, O_RDWR);
+	if (fd < 0) {
+		printf("fd open fail\n");
+		return;
+	}
 
 	ioctl(fd, GPIOIOC_SET_DIRECTION, GPIO_DIRECTION_OUT);
-	write(fd, buf, snprintf(buf, sizeof(buf), "%d", !!value));
+	if (write(fd, buf, snprintf(buf, sizeof(buf), "%d", !!value)) < 0) {
+		printf("write error\n");
+	}
 	close(fd);
 }
 
@@ -105,7 +120,7 @@ void starterled_main(int argc, char *argv[])
 			gpio_write(b_led, 0);
 		}
 
-		up_mdelay(500);
+		usleep(500000);
 	}
 	gpio_write(r_led, 0);
 	gpio_write(b_led, 0);

@@ -68,8 +68,10 @@ USERLIBS =
 
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libstubs$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libkc$(LIBEXT)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libkmm$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libkarch$(LIBEXT)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libkwque$(LIBEXT)
 USERLIBS  += $(LIBRARIES_DIR)$(DELIM)libproxies$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libuc$(LIBEXT)
 USERLIBS  += $(LIBRARIES_DIR)$(DELIM)libumm$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libuarch$(LIBEXT)
+USERLIBS  += $(LIBRARIES_DIR)$(DELIM)libuwque$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libframework$(LIBEXT)
 
 # Add libraries for C++ support.  CXX, CXXFLAGS, and COMPILEXX must
 # be defined in Make.defs for this to work!
@@ -78,11 +80,16 @@ ifeq ($(CONFIG_HAVE_CXX),y)
 USERLIBS += $(LIBRARIES_DIR)$(DELIM)libcxx$(LIBEXT)
 endif
 
-# Add library for application support.
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libexternal$(LIBEXT)
 
-ifneq ($(APPDIR),)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libapps$(LIBEXT)
+# Add libraries for iotivity support
+
+ifeq ($(CONFIG_ENABLE_IOTIVITY),y)
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libiotivity$(LIBEXT)
 endif
+
+# Add library for application support.
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libapps$(LIBEXT)
 
 # Add libraries for network support
 
@@ -90,28 +97,27 @@ ifeq ($(CONFIG_NET),y)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libnet$(LIBEXT)
 endif
 
+# Add libraries for audio module
 
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libexternal$(LIBEXT)
-
-# Add libraries for iotivity support
-
-ifeq ($(CONFIG_IOTIVITY_SCONS_BUILD),y)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)liboctbstack$(LIBEXT)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libc_common$(LIBEXT)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libconnectivity_abstraction$(LIBEXT)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libcoap$(LIBEXT)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)liblogger$(LIBEXT)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libocsrm$(LIBEXT)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libroutingmanager$(LIBEXT)
-ifeq ($(CONFIG_ENABLE_IOTIVITY_CLOUD),y)
-USERLIBS += $(LIBRARIES_DIR)$(DELIM)libresource_directory$(LIBEXT)
+ifeq ($(CONFIG_AUDIO),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libaudio$(LIBEXT)
 endif
-ifeq ($(CONFIG_ENABLE_IOTIVITY_SECURED),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libtinydtls$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libmbedx509$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libmbedtls$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libmbedcrypto$(LIBEXT)
+
+# Add libraries for se module
+ifeq ($(CONFIG_SE),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libse$(LIBEXT)
 endif
+
+# Add libraries for compression module
+
+ifeq ($(CONFIG_COMPRESSED_BINARY),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcompression$(LIBEXT)
+endif
+
+# Add libraries for crypto module
+
+ifeq ($(CONFIG_CRYPTO),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcrypto$(LIBEXT)
 endif
 
 # Add libraries for power management module
@@ -131,6 +137,28 @@ TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libdrivers$(LIBEXT)
 endif
 else
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libfs$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libdrivers$(LIBEXT)
+endif
+
+ifeq ($(CONFIG_BINFMT_ENABLE),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libbinfmt$(LIBEXT)
+endif
+
+ifeq ($(CONFIG_RTK_WLAN),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)librtl$(LIBEXT)
+endif
+
+ifeq ($(CONFIG_AMEBAD_WIFI),y)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)lib_wlan$(LIBEXT)
+TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)lib_wps$(LIBEXT)
+endif
+# Add libraries for iotjs support
+
+ifeq ($(CONFIG_ENABLE_IOTJS),y)
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libhttpparser$(LIBEXT)
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libiotjs$(LIBEXT)
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libjerry-core$(LIBEXT)
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libtuv$(LIBEXT)
+USERLIBS += $(LIBRARIES_DIR)$(DELIM)libjerry-libm$(LIBEXT)
 endif
 
 EXPORTLIBS = $(USERLIBS)

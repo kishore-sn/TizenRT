@@ -56,6 +56,7 @@
 
 #include <tinyara/config.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <sys/time.h>
 #include <time.h>
@@ -72,8 +73,6 @@
 #define _ALT_E          0x01
 #define _ALT_O          0x02
 #define _LEGAL_ALT(x)       { if (alt_format & ~(x)) return (0); }
-
-#define TM_YEAR_BASE        1900
 
 /****************************************************************************
  * Private Data

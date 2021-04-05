@@ -23,12 +23,15 @@
 /****************************************************************************
  * Included Files
  ****************************************************************************/
+#include <tinyara/config.h>
+
+#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h>
 
-#include <tinyara/config.h>
 #include <tinyara/fs/mtd.h>
 
 /****************************************************************************
@@ -39,7 +42,7 @@
 // 1. at least, have to set CONFIG_EXAMPLES_RAMFS_NEBLOCKS to 16 for ramfs test
 #ifdef CONFIG_RAMFS_TEST
 #define EXAMPLES_RAMFS_BUFSIZE \
-  (CONFIG_RAMMTD_ERASESIZE * CONFIG_RAMFS_TEST_RAMFS_NEBLOCKS)
+	(CONFIG_RAMMTD_ERASESIZE * CONFIG_RAMFS_TEST_RAMFS_NEBLOCKS)
 #endif
 
 // 2. If you enable CONFIG_MTD and CONFIG_MTD_SMART,
@@ -111,6 +114,7 @@ static int make_file(char *filename)
 
 	if (fwrite(in_string, BUFFER_SIZE, 1, fp) < 0) {
 		printf("Cannot write file %s\n", filename);
+		fclose(fp);
 		return -1;
 	}
 

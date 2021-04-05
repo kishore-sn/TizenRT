@@ -61,6 +61,7 @@
 
 #include <tinyara/irq.h>
 #include <tinyara/arch.h>
+#include <tinyara/mm/heap_regioninfo.h>
 #include <arch/irq.h>
 
 #include "nvic.h"
@@ -164,8 +165,8 @@ static void tiva_dumpnvic(const char *msg, int irq)
 #endif
 
 /****************************************************************************
- * Name: tiva_nmi, tiva_busfault, tiva_usagefault, tiva_pendsv,
- *       tiva_dbgmonitor, tiva_pendsv, tiva_reserved
+ * Name: tiva_nmi, tiva_pendsv, tiva_dbgmonitor,
+ *       tiva_pendsv, tiva_reserved
  *
  * Description:
  *   Handlers for various execptions.  None are handled and all are fatal
@@ -179,22 +180,6 @@ static int tiva_nmi(int irq, FAR void *context, FAR void *arg)
 {
 	(void)irqsave();
 	dbg("PANIC!!! NMI received\n");
-	PANIC();
-	return 0;
-}
-
-static int tiva_busfault(int irq, FAR void *context, FAR void *arg)
-{
-	(void)irqsave();
-	dbg("PANIC!!! Bus fault recived\n");
-	PANIC();
-	return 0;
-}
-
-static int tiva_usagefault(int irq, FAR void *context, FAR void *arg)
-{
-	(void)irqsave();
-	dbg("PANIC!!! Usage fault received\n");
 	PANIC();
 	return 0;
 }
@@ -358,7 +343,7 @@ void up_irqinitialize(void)
 #endif
 
 #ifdef CONFIG_ARCH_CHIP_CC3200
-	putreg32((uint32_t) CONFIG_RAM_START, NVIC_VECTAB);
+	putreg32((uint32_t)REGION_START, NVIC_VECTAB);
 #endif
 
 	/* Set all interrupts (and exceptions) to the default priority */
@@ -415,17 +400,16 @@ void up_irqinitialize(void)
 #ifdef CONFIG_ARMV7M_MPU
 	irq_attach(TIVA_IRQ_MEMFAULT, up_memfault, NULL);
 	up_enable_irq(TIVA_IRQ_MEMFAULT);
+#else
+	irq_attach(TIVA_IRQ_MEMFAULT, up_memfault, NULL);
 #endif
+	irq_attach(TIVA_IRQ_BUSFAULT, up_busfault, NULL);
+	irq_attach(TIVA_IRQ_USAGEFAULT, up_usagefault, NULL);
 
 	/* Attach all other processor exceptions (except reset and sys tick) */
 
 #ifdef CONFIG_DEBUG
 	irq_attach(TIVA_IRQ_NMI, tiva_nmi, NULL);
-#ifndef CONFIG_ARMV7M_MPU
-	irq_attach(TIVA_IRQ_MEMFAULT, up_memfault, NULL);
-#endif
-	irq_attach(TIVA_IRQ_BUSFAULT, tiva_busfault, NULL);
-	irq_attach(TIVA_IRQ_USAGEFAULT, tiva_usagefault, NULL);
 	irq_attach(TIVA_IRQ_PENDSV, tiva_pendsv, NULL);
 	irq_attach(TIVA_IRQ_DBGMONITOR, tiva_dbgmonitor, NULL);
 	irq_attach(TIVA_IRQ_RESERVED, tiva_reserved, NULL);

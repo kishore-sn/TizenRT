@@ -60,6 +60,15 @@
 #include <debug.h>
 
 #include <tinyara/arch.h>
+#include <tinyara/sched.h>
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+#include <tinyara/mm/mm.h>
+#endif
+#ifndef CONFIG_DISABLE_SIGNALS
+#include <signal.h>
+#include <tinyara/signal.h>
+#include "task/task.h"
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -107,26 +116,31 @@
 int task_activate(FAR struct tcb_s *tcb)
 {
 	irqstate_t flags = irqsave();
+#ifndef CONFIG_DISABLE_SIGNALS
+	int ret;
+	struct sigaction act;
 
-#ifdef CONFIG_SCHED_INSTRUMENTATION
+	act.sa_sigaction = (_sa_sigaction_t)thread_termination_handler;
+	act.sa_flags = 0;
+	(void)sigemptyset(&act.sa_mask);
 
-	/* Check if this is really a re-start */
-
-	if (tcb->task_state != TSTATE_TASK_INACTIVE) {
-		/* Inform the instrumentation layer that the task
-		 * has stopped
-		 */
-
-		sched_note_stop(tcb);
+	ret = sig_sethandler(tcb, SIGKILL, &act);
+	if (ret != OK) {
+		sdbg("Fail to set SIGKILL handler for activating tcb.\n");
 	}
-
-	/* Inform the instrumentation layer that the task
-	 * has started
-	 */
-
-	sched_note_start(tcb);
 #endif
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	pid_t hash_pid;
+	struct mm_heap_s *heap = mm_get_heap(tcb->stack_alloc_ptr);
 
+	hash_pid = PIDHASH(tcb->pid);
+	if (heap && heap->alloc_list[hash_pid].pid == HEAPINFO_INIT_INFO) {
+		heap->alloc_list[hash_pid].pid = tcb->pid;
+		heap->alloc_list[hash_pid].curr_alloc_size = 0;
+		heap->alloc_list[hash_pid].peak_alloc_size = 0;
+		heap->alloc_list[hash_pid].num_alloc_free = 0;
+	}
+#endif
 	up_unblock_task(tcb);
 	irqrestore(flags);
 	return OK;

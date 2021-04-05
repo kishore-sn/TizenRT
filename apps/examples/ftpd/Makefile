@@ -58,7 +58,7 @@ include $(APPDIR)/Make.defs
 
 APPNAME = ftpd
 THREADEXEC = TASH_EXECMD_ASYNC
-FUNCNAME = ftpd_main
+FUNCNAME = $(APPNAME)_main
 
 # ftp server example
 
@@ -130,10 +130,10 @@ install:
 endif
 
 ifeq ($(CONFIG_BUILTIN_APPS)$(CONFIG_EXAMPLES_FTPD),yy)
-$(BUILTIN_REGISTRY)$(DELIM)$(APPNAME)_main.bdat: $(DEPCONFIG) Makefile
+$(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat: $(DEPCONFIG) Makefile
 	$(call REGISTER,$(APPNAME),$(FUNCNAME),$(THREADEXEC))
 
-context: $(BUILTIN_REGISTRY)$(DELIM)$(APPNAME)_main.bdat
+context: $(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat
 
 else
 context:

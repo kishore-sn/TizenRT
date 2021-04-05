@@ -16,7 +16,7 @@
  *
  ****************************************************************************/
 
-/// @file environ.c
+/// @file tc_environ.c
 
 /// @brief Test Case Example for Environ API
 
@@ -56,7 +56,11 @@ static void tc_environ_setenv_getenv_unsetenv(void)
 	ret_chk = setenv(psz_name, psz_value, 1);
 	TC_ASSERT_EQ_CLEANUP("setenv", ret_chk, OK, clearenv());
 
+	psz_getvalue = getenv(NULL);
+	TC_ASSERT_EQ("getenv", psz_getvalue, NULL);
+
 	psz_getvalue = getenv(psz_name);
+	TC_ASSERT_NEQ_CLEANUP("getenv", psz_getvalue, NULL, clearenv());
 	TC_ASSERT_EQ_CLEANUP("getenv", strcmp(psz_getvalue, psz_value), 0, clearenv());
 
 	/* with overwrite_num = 0, psz_value should not be updated */
@@ -68,6 +72,7 @@ static void tc_environ_setenv_getenv_unsetenv(void)
 	/* set and get value should not be equal as overwrite is 0 */
 
 	psz_getvalue = getenv(psz_name);
+	TC_ASSERT_NEQ_CLEANUP("getenv", psz_getvalue, NULL, clearenv());
 	TC_ASSERT_NEQ_CLEANUP("getenv", strcmp(psz_getvalue, psz_value), 0, clearenv());
 
 	/* random value, getenv should fail */
@@ -142,21 +147,23 @@ static void tc_environ_putenv(void)
 {
 	int ret_chk;
 	char *psz_getvalue = NULL;
+
 	/* adding enviroment variable */
 
 	ret_chk = putenv("PATH=C:");
 	TC_ASSERT_EQ("putenv", ret_chk, OK);
 
 	psz_getvalue = getenv("PATH");
-	TC_ASSERT_NOT_NULL("getenv", psz_getvalue);
-	TC_ASSERT_EQ("getenv", strcmp(psz_getvalue, "C:"), 0);
+	TC_ASSERT_NEQ_CLEANUP("getenv", psz_getvalue, NULL, clearenv());
+	TC_ASSERT_EQ_CLEANUP("getenv", strcmp(psz_getvalue, "C:"), 0, clearenv());
 
 	/* Changing the value of already existing PATH variable */
 	ret_chk = putenv("PATH=D:");
 	TC_ASSERT_EQ("putenv", ret_chk, OK);
 
 	psz_getvalue = getenv("PATH");
-	TC_ASSERT_EQ("getenv", strcmp(psz_getvalue, "D:"), 0);
+	TC_ASSERT_NEQ_CLEANUP("getenv", psz_getvalue, NULL, clearenv());
+	TC_ASSERT_EQ_CLEANUP("getenv", strcmp(psz_getvalue, "D:"), 0, clearenv());
 
 	ret_chk = putenv(NULL);
 	TC_ASSERT_EQ("putenv", ret_chk, ERROR);
@@ -182,6 +189,7 @@ static void tc_environ_get_environ_ptr(void)
 	size_t cmp_size = 0;
 	char *env_ptr;
 	int env_idx;
+	int ret_chk;
 	char env_name[ENV_TEST_LEN];
 	char env_val[ENV_TEST_LEN];
 
@@ -194,7 +202,7 @@ static void tc_environ_get_environ_ptr(void)
 	}
 
 	env_ptr = get_environ_ptr(&env_size);
-	TC_ASSERT_NOT_NULL("get_environ_ptr", env_ptr);
+	TC_ASSERT_NEQ("get_environ_ptr", env_ptr, NULL);
 
 	/* env_size is set to length of all env name and val pair */
 
@@ -205,7 +213,12 @@ static void tc_environ_get_environ_ptr(void)
 		env_ptr += strlen(env_ptr) + 1;
 	}
 
-	clearenv();
+	ret_chk = clearenv();
+	TC_ASSERT_EQ("clearenv", ret_chk, OK);
+
+	env_ptr = get_environ_ptr(&env_size);
+	TC_ASSERT_EQ("get_environ_ptr", env_ptr, NULL);
+
 	TC_SUCCESS_RESULT();
 }
 

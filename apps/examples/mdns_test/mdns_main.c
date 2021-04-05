@@ -62,7 +62,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <apps/netutils/mdnsd.h>
+#include <protocols/mdnsd.h>
 
 #include <netinet/in.h>
 #include <netdb.h>
@@ -71,8 +71,8 @@
 /****************************************************************************
  * Definitions
  ****************************************************************************/
-#if defined(CONFIG_ARCH_BOARD_SIDK_S5JT200) || defined(CONFIG_ARCH_BOARD_ARTIK053)
-#define MDNS_NETIF_NAME         "wl1"
+#if defined(CONFIG_WIFI_MANAGER)
+#define MDNS_NETIF_NAME	CONFIG_WIFIMGR_STA_IFNAME
 #else
 #error "cannot set MDNS_NETIF_NAME"
 #endif

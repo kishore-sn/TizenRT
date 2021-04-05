@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright 2016 Samsung Electronics All Rights Reserved.
+ * Copyright 2019 Samsung Electronics All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
  *
  ****************************************************************************/
 /****************************************************************************
- * libc/net/lib_inetaddr.c
+ * lib/libc/net/lib_inetaddr.c
  *
  *   Copyright (C) 2011 Yu Qiang. All rights reserved.
  *   Author: Yu Qiang <yuq825@gmail.com>
@@ -61,9 +61,14 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
+typedef unsigned char u8_t;
+typedef unsigned int u32_t;
+
+/** 255.255.255.255 */
+#define IPADDR_NONE         ((u32_t)0xffffffffUL)
+
+#define in_range(c, lo, up)  ((u8_t)c >= lo && (u8_t)c <= up)
+#define isdigit(c)           in_range(c, '0', '9')
 
 /****************************************************************************
  * name inet_addr
@@ -72,13 +77,20 @@
  *   The inet_addr() function converts the string pointed to by cp, in the
  *   standard IPv4 dotted decimal notation, to an integer value suitable for
  *   use as an Internet address.
-
+ *
  ****************************************************************************/
 
 in_addr_t inet_addr(FAR const char *cp)
 {
-	unsigned int a, b, c, d;
+	unsigned int a;
+	unsigned int b;
+	unsigned int c;
+	unsigned int d;
 	uint32_t result;
+
+	if (!isdigit((char)*cp)) {
+		return (IPADDR_NONE);
+	}
 
 	sscanf(cp, "%u.%u.%u.%u", &a, &b, &c, &d);
 	result = a << 8;
@@ -89,10 +101,3 @@ in_addr_t inet_addr(FAR const char *cp)
 	result |= d;
 	return HTONL(result);
 }
-
-int inet_aton(const char *cp, struct in_addr *inp)
-{
-	inp->s_addr = inet_addr(cp);
-	return 1;
-}
-

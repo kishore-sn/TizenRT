@@ -84,12 +84,28 @@
 
 /**
  * @ingroup SCHED_KERNEL
+ * @brief Types of Prctl API
  */
-#define PR_SET_NAME 1
-/**
- * @ingroup SCHED_KERNEL
- */
-#define PR_GET_NAME 2
+enum prctl_type_e {
+	PR_SET_NAME = 0,
+	PR_GET_NAME,
+	PR_GET_STKLOG,
+	PR_MSG_SAVE,
+	PR_MSG_READ,
+	PR_MSG_REMOVE,
+	PR_MONITOR_REGISTER,
+	PR_MONITOR_UPDATE,
+	PR_SET_PREFERENCE,
+	PR_GET_PREFERENCE,
+	PR_REMOVE_PREFERENCE,
+	PR_REMOVEALL_PREFERENCE,
+	PR_CHECK_PREFERENCE,
+	PR_SET_PREFERENCE_CB,
+	PR_UNSET_PREFERENCE_CB,
+	PR_REBOOT_REASON_READ,
+	PR_REBOOT_REASON_WRITE,
+	PR_REBOOT_REASON_CLEAR,
+};
 
 /****************************************************************************
  * Public Type Definitions
@@ -113,8 +129,9 @@ extern "C" {
  *   values PR_* defined above) and with additional arguments depending on
  *   the specific command.
  *
- * param[in] options for what to do
- * return The returned value may depend on the specific commnand.  For PR_SET_NAME
+ * @details @b #include <sys/prctl.h>
+ * @param[in] option options for what to do
+ * @return The returned value may depend on the specific commnand.  For PR_SET_NAME
  *   and PR_GET_NAME, the returned value of 0 indicates successful operation.
  *   On any failure, -1 is retruend and the errno value is set appropriately.
  *
@@ -122,7 +139,7 @@ extern "C" {
  *     EFAULT optional arg1 is not a valid address.
  *     ESRCH  No task/thread can be found corresponding to that specified
  *       by optional arg1.
- * @since Tizen RT v1.0
+ * @since TizenRT v1.0
  */
 int prctl(int option, ...);
 

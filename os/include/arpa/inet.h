@@ -57,7 +57,7 @@
   */
 
 /**
- * @file inet.h
+ * @file arpa/inet.h
  * @brief inet API
  */
 
@@ -113,37 +113,6 @@
 #define NTOHS(hs) HTONS(hs)
 #define NTOHL(hl) HTONL(hl)
 
-#ifdef CONFIG_NET_LWIP
-
-#ifdef htons
-#undef htons
-#endif /* htons */
-#ifdef htonl
-#undef htonl
-#endif /* htonl */
-#ifdef ntohs
-#undef ntohs
-#endif /* ntohs */
-#ifdef ntohl
-#undef ntohl
-#endif /* ntohl */
-#ifdef inet_aton
-#undef inet_aton
-#endif /* inet_aton */
-#ifdef inet_ntoa
-#undef inet_ntoa
-#endif /* inet_ntoa */
-#ifdef inet_pton
-#undef inet_pton
-#endif /* inet_pton */
-#ifdef inet_ntop
-#undef inet_ntop
-#endif /* inet_ntop */
-#ifdef inet_addr
-#undef inet_addr
-#endif /* inet_addr */
-
-#endif /*CONFIG_NET_LWIP*/
 
 /****************************************************************************
  * Public Function Prototypes
@@ -162,6 +131,8 @@ extern "C"
 /**
  * @brief Convert the unsigned integer netlong from network byte order to host byte order
  *
+ * @details @b #include <arpa/inet.h>\n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
  * @param[in] nl netlong
  *
  * @return On success, the host byte-ordered netlong is returned. On failure, -1 is returned.
@@ -171,6 +142,8 @@ uint32_t ntohl(uint32_t nl);
 /**
  * @brief Convert the unsigned short integer netshort from network byte order to host byte order
  *
+ * @details @b #include <arpa/inet.h>\n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
  * @param[in] ns netshort
  *
  * @return On success, the host byte-ordered netshort is returned. On failure, -1 is returned.
@@ -180,6 +153,8 @@ uint16_t ntohs(uint16_t ns);
 /**
  * @brief Convert the unsigned integer hostlong from host byte order to network byte order
  *
+ * @details @b #include <arpa/inet.h>\n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
  * @param[in] hl hostlong
  *
  * @return On success, the network byte-ordered hostlong is returned. On failure, -1 is returned.
@@ -189,6 +164,8 @@ uint32_t htonl(uint32_t hl);
 /**
  * @brief Convert the unsigned short integer hostshort from host byte order to network byte order
  *
+ * @details @b #include <arpa/inet.h>\n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
  * @param[in] hs hostshort
  *
  * @return On success, the network byte-ordered hostshort is returned. On failure, -1 is returned.
@@ -199,56 +176,61 @@ uint16_t htons(uint16_t hs);
 /**
  * @brief Convert the Internet host address from the IPv4 numbers-and-dots notation into binary form
  *
+ * @details @b #include <arpa/inet.h>
  * @param[in] cp the Internet host address
  * @param[in] inp structure that will store the converted value (IPv4 numbers-and-dots notation)
  *
  * @return On success, nonzero is returned. On failure, zero is returned.
 */
-int         inet_aton(FAR const char *cp, FAR struct in_addr *inp);
+int inet_aton(FAR const char *cp, FAR struct in_addr *inp);
 
 /**
  * @brief Convert the Internet host address from the IPv4 numbers-and-dots notation into binary data in network byte order.
  *
+ * @details @b #include <arpa/inet.h>\n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
  * @param[in] cp the Internet host address
  *
  * @return On success, binary data in network byte order is returned. On failure, INADDR_NONE(usually -1) is returned.
 */
-in_addr_t   inet_addr(FAR const char *cp);
+in_addr_t inet_addr(FAR const char *cp);
 
 ///@cond
-in_addr_t   inet_network(FAR const char *cp);
+in_addr_t inet_network(FAR const char *cp);
 ///@endcond
 
 #ifdef CONFIG_CAN_PASS_STRUCTS
 /**
  * @brief Convert the Internet host address to a string in IPv4 dotted-decimal notation.
  *
+ * @details @b #include <arpa/inet.h>\n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
  * @param[in] in the Internet host address in network byte order
  *
  * @return On success, a string in IPv4 dotted-decimal notation is returned. On failure, -1 is returned.
 */
-FAR char   *inet_ntoa(struct in_addr in);
+FAR char *inet_ntoa(struct in_addr in);
 
 ///@cond
-in_addr_t   inet_lnaof(struct in_addr in);
-in_addr_t   inet_netof(struct in_addr in);
+in_addr_t inet_lnaof(struct in_addr in);
+in_addr_t inet_netof(struct in_addr in);
 ///@endcond
 #else
 ///@cond
-FAR char   *_inet_ntoa(in_addr_t in);
+FAR char *_inet_ntoa(in_addr_t in);
 # define inet_ntoa(in) _inet_ntoa(in.s_addr);
 
-in_addr_t   _inet_lnaof(in_addr_t in);
+in_addr_t _inet_lnaof(in_addr_t in);
 # define inet_lnaof(in) _inet_lnaof(in.s_addr);
 
-in_addr_t   _inet_netof(in_addr_t in);
+in_addr_t _inet_netof(in_addr_t in);
 # define inet_netof(in) _inet_netof(in.s_addr);
 ///@endcond
 #endif
 ///@cond
 struct in_addr inet_makeaddr(in_addr_t net, in_addr_t host);
 
-int         inet_pton(int af, FAR const char *src, FAR void *dst);
+int inet_pton(int af, FAR const char *src, FAR void *dst);
 const char *inet_ntop(int af, FAR const void *src, FAR char *dst, socklen_t size);
 ///@endcond
 

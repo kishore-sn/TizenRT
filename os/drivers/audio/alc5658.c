@@ -18,16 +18,10 @@
 /****************************************************************************
  * drivers/audio/alc5658.c
  *
- * Audio device driver for Wolfson Microelectronics ALC5658 Audio codec.
+ * Audio device driver for REALTEK ALC5658 Audio codec.
  *
  *   Copyright (C) 2014, 2016 Gregory Nutt. All rights reserved.
  *   Author:  Gregory Nutt <gnutt@nuttx.org>
- *
- * References:
- * - "ALC5658 Ultra Low Power CODEC for Portable Audio Applications, Pre-
- *    Production", September 2012, Rev 3.3, Wolfson Microelectronics
- *
- * -  The framework for this driver is based on Ken Pettit's VS1053 driver.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -63,19 +57,15 @@
  ****************************************************************************/
 
 #include <tinyara/config.h>
-
 #include <sys/types.h>
 #include <sys/ioctl.h>
-
 #include <stdint.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
 #include <fixedmath.h>
-#include <queue.h>
 #include <debug.h>
-
 #include <tinyara/irq.h>
 #include <tinyara/kmalloc.h>
 #include <tinyara/clock.h>
@@ -88,111 +78,47 @@
 #include <tinyara/math.h>
 #include <math.h>
 #include <tinyara/i2c.h>
+#include <stdbool.h>
 
 #include "alc5658.h"
+#include "alc5658scripts.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+#define DMA_BUFFER_MAX_SIZE 65536	/* 64K */
 
-#define ALC5658_DEFAULT_SAMPRATE 	48000
-#define ALC5658_DEFAULT_NCHANNELS 	2
-#define ALC5658_DEFAULT_BPSAMP 		16
-#define FAIL	0xFFFF
+#define DMA_BUFFER_MIN_SIZE 4096	/* 4K */
 
-/****************************************************************************
- * Private Function Prototypes
- ****************************************************************************/
+#define AUDIO_BUFFER_MAX_NUM 16
 
-#if !defined(CONFIG_ALC5658_REGDUMP) && !defined(CONFIG_ALC5658_CLKDEBUG)
-static
-#endif
-uint16_t alc5658_readreg(FAR struct alc5658_dev_s *priv, uint16_t regaddr);
-static void alc5658_writereg(FAR struct alc5658_dev_s *priv, uint16_t regaddr, uint16_t regval);
-static void alc5658_takesem(sem_t *sem);
-static uint16_t alc5658_modifyreg(FAR struct alc5658_dev_s *priv, uint16_t regaddr, uint16_t set, uint16_t clear);
+#define AUDIO_BUFFER_MIN_NUM 2
 
-#define         alc5658_givesem(s) sem_post(s)
+#define ALC5658_DEFAULT_SAMPRATE    16000
 
-#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
-static inline uint16_t alc5658_scalevolume(uint16_t volume, b16_t scale);
-static void alc5658_setvolume(FAR struct alc5658_dev_s *priv, uint16_t volume, bool mute);
-#endif
-#ifndef CONFIG_AUDIO_EXCLUDE_TONE
-static void alc5658_setbass(FAR struct alc5658_dev_s *priv, uint8_t bass);
-static void alc5658_settreble(FAR struct alc5658_dev_s *priv, uint8_t treble);
-#endif
+#define ALC5658_DEFAULT_NCHANNELS    2
 
-static void alc5658_setdatawidth(FAR struct alc5658_dev_s *priv);
-static void alc5658_setbitrate(FAR struct alc5658_dev_s *priv);
+#define ALC5658_DEFAULT_BPSAMP    16
 
-/* Audio lower half methods (and close friends) */
+#define MUTE_HP_LR    0x8080
 
-static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR struct audio_caps_s *caps);
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR void *session, FAR const struct audio_caps_s *caps);
-#else
-static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR const struct audio_caps_s *caps);
-#endif
-static int alc5658_shutdown(FAR struct audio_lowerhalf_s *dev);
-static void alc5658_senddone(FAR struct i2s_dev_s *i2s, FAR struct ap_buffer_s *apb, FAR void *arg, int result);
-static void alc5658_returnbuffers(FAR struct alc5658_dev_s *priv);
-static int alc5658_sendbuffer(FAR struct alc5658_dev_s *priv);
+#define UNMUTE_HP_LR    0x0
 
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-static int alc5658_start(FAR struct audio_lowerhalf_s *dev, FAR void *session);
-#else
-static int alc5658_start(FAR struct audio_lowerhalf_s *dev);
-#endif
-#ifndef CONFIG_AUDIO_EXCLUDE_STOP
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-static int alc5658_stop(FAR struct audio_lowerhalf_s *dev, FAR void *session);
-#else
-static int alc5658_stop(FAR struct audio_lowerhalf_s *dev);
-#endif
-#endif
-#ifndef CONFIG_AUDIO_EXCLUDE_PAUSE_RESUME
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-static int alc5658_pause(FAR struct audio_lowerhalf_s *dev, FAR void *session);
-static int alc5658_resume(FAR struct audio_lowerhalf_s *dev, FAR void *session);
-#else
-static int alc5658_pause(FAR struct audio_lowerhalf_s *dev);
-static int alc5658_resume(FAR struct audio_lowerhalf_s *dev);
-#endif
-#endif
-static int alc5658_enqueuebuffer(FAR struct audio_lowerhalf_s *dev, FAR struct ap_buffer_s *apb);
-static int alc5658_cancelbuffer(FAR struct audio_lowerhalf_s *dev, FAR struct ap_buffer_s *apb);
-static int alc5658_ioctl(FAR struct audio_lowerhalf_s *dev, int cmd, unsigned long arg);
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-static int alc5658_reserve(FAR struct audio_lowerhalf_s *dev, FAR void **session);
-#else
-static int alc5658_reserve(FAR struct audio_lowerhalf_s *dev);
-#endif
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-static int alc5658_release(FAR struct audio_lowerhalf_s *dev, FAR void *session);
-#else
-static int alc5658_release(FAR struct audio_lowerhalf_s *dev);
-#endif
+#define ALC5658_HP_VOL_MIN    0x0
 
-/* Interrupt handling an worker thread */
+#define ALC5658_HP_VOL_MAX    0x1F
 
-#ifdef ALC5658_USE_FFLOCK_INT
-static void alc5658_interrupt_work(FAR void *arg);
-static int alc5658_interrupt(FAR const struct alc5658_lower_s *lower, FAR void *arg);
-#endif
+#define ALC5658_HP_VOL_DEFAULT    0x1a
 
-static void *alc5658_workerthread(pthread_addr_t pvarg);
+#define ALC5658_GAIN_MIN    0x0
 
-/* Initialization */
+#define ALC5658_GAIN_MAX    0x45
 
-static void alc5658_audio_output(FAR struct alc5658_dev_s *priv);
-static void alc5658_audio_input(FAR struct alc5658_dev_s *priv);
-#ifdef ALC5658_USE_FFLOCK_INT
-static void alc5658_configure_ints(FAR struct alc5658_dev_s *priv);
-#else
-#define       alc5658_configure_ints(p)
-#endif
-static void alc5658_hw_reset(FAR struct alc5658_dev_s *priv);
+#define ALC5658_GAIN_DEFAULT    0x20
+
+#define VOL_REG_BITSHIFT_COUNT    8
+
+#define alc5658_givesem(s) sem_post(s)
 
 /****************************************************************************
  * Private Data
@@ -221,20 +147,38 @@ static const struct audio_ops_s g_audioops = {
 	alc5658_release				/* release        */
 };
 
-/****************************************************************************
- * Private Functions
- ****************************************************************************/
+struct sample_rate_entry_s {
+	uint16_t samprate;
+	t_codec_init_script_entry *script;
+	int size;
+};
 
+static const struct sample_rate_entry_s g_sample_entry[] = {
+	{AUDIO_SAMP_RATE_8K, codec_init_pll_8K, sizeof(codec_init_pll_8K)},
+	{AUDIO_SAMP_RATE_11K, codec_init_pll_11K, sizeof(codec_init_pll_11K)},
+	{AUDIO_SAMP_RATE_16K, codec_init_pll_16K, sizeof(codec_init_pll_16K)},
+	{AUDIO_SAMP_RATE_22K, codec_init_pll_22K, sizeof(codec_init_pll_22K)},
+	{AUDIO_SAMP_RATE_32K, codec_init_pll_32K, sizeof(codec_init_pll_32K)},
+	{AUDIO_SAMP_RATE_44K, codec_init_pll_44K, sizeof(codec_init_pll_44K)},
+	{AUDIO_SAMP_RATE_48K, codec_init_pll_48K, sizeof(codec_init_pll_48K)}
+};
+
+/****************************************************************************
+ * Name: delay
+ *
+ * Description
+ *    Delay in ms.
+ ****************************************************************************/
 static void delay(unsigned int mS)
 {
-	volatile systime_t start = clock_systimer();
-
+	volatile clock_t start = clock_systimer();
 	mS = mS / MSEC_PER_TICK + 1;
 
-	while (1)
+	while (1) {
 		if ((start + mS) < clock_systimer()) {
 			return;
 		}
+	}
 }
 
 /****************************************************************************
@@ -244,35 +188,45 @@ static void delay(unsigned int mS)
  *    Read the specified 16-bit register from the ALC5658 device.
  *
  ****************************************************************************/
-
-#if !defined(CONFIG_ALC5658_REGDUMP) && !defined(CONFIG_ALC5658_CLKDEBUG)
-static
-#endif
 uint16_t alc5658_readreg(FAR struct alc5658_dev_s *priv, uint16_t regaddr)
 {
 
 	int32_t ret;
-	uint8_t reg[2];
+	uint16_t reg16;
 	uint16_t regval;
-	FAR struct i2c_dev_s *dev = priv->i2c;
-	FAR struct i2c_config_s *alc5658_i2c_config = &(priv->lower->i2c_config);
+	FAR struct i2c_dev_s *dev;
+	FAR struct i2c_config_s *alc5658_i2c_config;
 
-	reg[0] = ((char *)&regaddr)[1];
-	reg[1] = ((char *)&regaddr)[0];
-
-	ret = i2c_write(dev, alc5658_i2c_config, reg, 2);
-	if (ret < 0) {
-		auddbg("Error, cannot read reg %x\n", regaddr);
-		return FAIL;
+	/* if no audio device object return */
+	if (!priv || !priv->lower) {
+		auddbg("Error, Device's private data Not available\n");
+		return -EINVAL;
 	}
 
-	ret = i2c_read(dev, alc5658_i2c_config, reg, 2);
-	if (ret < 0) {
-		auddbg("Error, cannot read reg %x\n", regaddr);
-		return FAIL;
+	dev = priv->i2c;
+	alc5658_i2c_config = &(priv->lower->i2c_config);
+
+	/* if board private function no available return */
+	if (!alc5658_i2c_config) {
+		auddbg("Error, Configuration function not Initialised\n");
+		return -EINVAL;
 	}
 
-	regval = ((uint16_t) reg[0] << 8) | (uint16_t) reg[1];
+	reg16 = (regaddr >> 8) | ((regaddr & 0xFF) << 8);
+
+	ret = i2c_write(dev, alc5658_i2c_config, (uint8_t *)&reg16, 2);
+	if (ret < 0) {
+		auddbg("Error, cannot read reg %x\n", regaddr);
+		return -EIO;
+	}
+
+	ret = i2c_read(dev, alc5658_i2c_config, (uint8_t *)&reg16, 2);
+	if (ret < 0) {
+		auddbg("Error, cannot read reg %x\n", regaddr);
+		return -EIO;
+	}
+
+	regval = (reg16 >> 8) | ((reg16 & 0xFF) << 8);
 
 	return regval;
 }
@@ -284,32 +238,57 @@ uint16_t alc5658_readreg(FAR struct alc5658_dev_s *priv, uint16_t regaddr)
  *   Write the specified 16-bit register to the ALC5658 device.
  *
  ************************************************************************************/
-
 static void alc5658_writereg(FAR struct alc5658_dev_s *priv, uint16_t regaddr, uint16_t regval)
 {
 	int32_t ret;
-	uint8_t reg[4];
-	FAR struct i2c_dev_s *dev = priv->i2c;
-	FAR struct i2c_config_s *alc5658_i2c_config = &(priv->lower->i2c_config);
+	uint16_t lower_hword;
+	uint16_t high_hword;
+	int32_t full_word;
+	FAR struct i2c_dev_s *dev;
+	FAR struct i2c_config_s *alc5658_i2c_config;
 
-	reg[0] = ((char *)&regaddr)[1];
-	reg[1] = ((char *)&regaddr)[0];
-
-	reg[2] = ((char *)&regval)[1];
-	reg[3] = ((char *)&regval)[0];
-
-	ret = i2c_write(dev, alc5658_i2c_config, (uint8_t *) reg, 4);
-	if (ret < 0) {
-		auddbg("Error, cannot write reg %x\n", regaddr);
+	/* if no audio device object return */
+	if (!priv || !priv->lower) {
+		auddbg("Error, Device's private data Not available\n");
 		return;
 	}
 
+	dev = priv->i2c;
+	alc5658_i2c_config = &(priv->lower->i2c_config);
+
+	/* if board private function no available return */
+	if (!alc5658_i2c_config) {
+		auddbg("Error, Configuration function not Initialised\n");
+		return;
+	}
+
+	lower_hword = (regaddr >> 8) | ((regaddr & 0xFF) << 8);
+	high_hword = (regval >> 8) | ((regval & 0xFF) << 8);
+	full_word = (int32_t)(((int32_t)high_hword << 16) | ((int32_t)lower_hword));
+
+	ret = i2c_write(dev, alc5658_i2c_config, (uint8_t *)&full_word, 4);
+	if (ret < 0) {
+		auddbg("Error, cannot write reg %x\n", regaddr);
+	}
 	return;
 }
 
+/************************************************************************************
+ * Name: alc5658_modifyreg
+ *
+ * Description:
+ *   Modify the specified 16-bit register to the ALC5658 device.
+ *
+ ************************************************************************************/
 static uint16_t alc5658_modifyreg(FAR struct alc5658_dev_s *priv, uint16_t regaddr, uint16_t set, uint16_t clear)
 {
 	uint16_t data;
+
+	/* if no audio device object return */
+	if (!priv) {
+		auddbg("Error, Device's private data Not available\n");
+		return -EINVAL;
+	}
 
 	data = alc5658_readreg(priv, regaddr);
 	data &= ~clear;
@@ -319,15 +298,47 @@ static uint16_t alc5658_modifyreg(FAR struct alc5658_dev_s *priv, uint16_t regad
 	return alc5658_readreg(priv, regaddr);
 }
 
+/************************************************************************************
+ * Name: alc5658_exec_i2c_script
+ *
+ * Description:
+ *   Executes given script through i2c to configure ALC5658 device.
+ *
+ ************************************************************************************/
 static void alc5658_exec_i2c_script(FAR struct alc5658_dev_s *priv, t_codec_init_script_entry *script, uint32_t size)
 {
 	uint32_t i;
 	uint16_t ret;
 
+	/* if no audio device object return */
+	if (!priv || !script) {
+		auddbg("Error, Device's private data or init script not available\n");
+		return;
+	}
+
 	for (i = 0; i < size; i++) {
 		ret = alc5658_modifyreg(priv, script[i].addr, script[i].val, 0xFFFF);
 		delay(script[i].delay);
 	}
+}
+
+/************************************************************************************
+ * Name: alc5658_get_sample_rate_script
+ *
+ * Description:
+ *  Check the given sample rate's valididation with alc5658 and return specific script
+ *
+ ************************************************************************************/
+static int alc5658_get_sample_rate_script(uint16_t sample_rate)
+{
+	int count = sizeof(g_sample_entry) / sizeof(struct sample_rate_entry_s);
+	int i;
+	for (i = 0; i < count; i++) {
+		if (sample_rate == g_sample_entry[i].samprate) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 /************************************************************************************
@@ -338,7 +349,6 @@ static void alc5658_exec_i2c_script(FAR struct alc5658_dev_s *priv, t_codec_init
  *  by a signal.
  *
  ************************************************************************************/
-
 static void alc5658_takesem(sem_t *sem)
 {
 	int ret;
@@ -350,20 +360,19 @@ static void alc5658_takesem(sem_t *sem)
 }
 
 /************************************************************************************
- * Name: alc5658_scalevolume
+ * Name: alc5658_dumpregs
  *
  * Description:
- *   Set the right and left volume values in the ALC5658 device based on the current
- *   volume and balance settings.
+ *  Print a set of alc5658 registers for debugging.
  *
  ************************************************************************************/
-
-#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
-static inline uint16_t alc5658_scalevolume(uint16_t volume, b16_t scale)
+static void alc5658_dumpregs(struct alc5658_dev_s *priv)
 {
-	return b16toi((b16_t) volume * scale);
+	audvdbg("MIC GAIN 0x%x\n", (uint32_t)alc5658_readreg(priv, ALC5658_IN1));
+	audvdbg("MUTE HPOUT MUTE %x\n", (uint32_t)alc5658_readreg(priv, ALC5658_HPOUT));
+	audvdbg("VOLL 0x%x\n", (uint32_t)alc5658_readreg(priv, ALC5658_HPOUT_L));
+	audvdbg("VOLR 0x%x\n", (uint32_t)alc5658_readreg(priv, ALC5658_HPOUT_R));
 }
-#endif
 
 /************************************************************************************
  * Name: alc5658_setvolume
@@ -373,21 +382,58 @@ static inline uint16_t alc5658_scalevolume(uint16_t volume, b16_t scale)
  *   volume and balance settings.
  *
  ************************************************************************************/
-
 #ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
-static void alc5658_setvolume(FAR struct alc5658_dev_s *priv, uint16_t volume, bool mute)
+static void alc5658_setvolume(FAR struct alc5658_dev_s *priv)
 {
+	/* if no audio device object return */
+	if (!priv) {
+		auddbg("Error, Device's private data Not available\n");
+		return;
+	}
 
-	audvdbg("volume=%u mute=%u\n", volume, mute);
+	/* Bits 8:12; 00000: 0dB,  00001: -0.75dB, 11111: -23.25dB, (-0.75dB/step) */
 
-	/* ADD VOLUME CODE HERE */
-
-	/* Remember the volume level and mute settings */
-
-	priv->volume = volume;
-	priv->mute = mute;
+	if (!priv->mute) {
+		alc5658_writereg(priv, ALC5658_HPOUT, UNMUTE_HP_LR);
+		alc5658_writereg(priv, ALC5658_HPOUT_L, (ALC5658_HP_VOL_MAX - priv->volume) << VOL_REG_BITSHIFT_COUNT);
+		alc5658_writereg(priv, ALC5658_HPOUT_R, (ALC5658_HP_VOL_MAX - priv->volume) << VOL_REG_BITSHIFT_COUNT);
+	} else {
+		alc5658_writereg(priv, ALC5658_HPOUT, MUTE_HP_LR);
+	}
+	alc5658_dumpregs(priv);
 }
 #endif							/* CONFIG_AUDIO_EXCLUDE_VOLUME */
+
+/************************************************************************************
+ * Name: alc5658_set_inport_gain
+ *
+ * Description:
+ *   Set the IN port gain.
+ *
+ ************************************************************************************/
+#ifndef CONFIG_AUDIO_EXCLUDE_GAIN
+static void alc5658_set_inport_gain(FAR struct alc5658_dev_s *priv)
+{
+	/* Bits 8:14; 00000: 0h(-12dB) to 45h(39.75dB) rest reserved  (0.75dB/step) */
+	alc5658_writereg(priv, ALC5658_IN1, priv->gain << VOL_REG_BITSHIFT_COUNT);
+	alc5658_dumpregs(priv);
+}
+#endif
+
+/************************************************************************************
+ * Name: alc5658_scalevolume
+ *
+ * Description:
+ *   Set the right and left volume values in the ALC5658 device based on the current
+ *   volume and balance settings.
+ *
+ ************************************************************************************/
+#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
+static inline uint16_t alc5658_scalevolume(uint16_t volume, b16_t scale)
+{
+	return b16toi((b16_t)volume * scale);
+}
+#endif
 
 /************************************************************************************
  * Name: alc5658_setbass
@@ -398,7 +444,6 @@ static void alc5658_setvolume(FAR struct alc5658_dev_s *priv, uint16_t volume, b
  *   The level and range are in whole percentage levels (0-100).
  *
  ************************************************************************************/
-
 #ifndef CONFIG_AUDIO_EXCLUDE_TONE
 static void alc5658_setbass(FAR struct alc5658_dev_s *priv, uint8_t bass)
 {
@@ -415,7 +460,6 @@ static void alc5658_setbass(FAR struct alc5658_dev_s *priv, uint8_t bass)
  *   The level and range are in whole percentage levels (0-100).
  *
  ************************************************************************************/
-
 #ifndef CONFIG_AUDIO_EXCLUDE_TONE
 static void alc5658_settreble(FAR struct alc5658_dev_s *priv, uint8_t treble)
 {
@@ -424,27 +468,46 @@ static void alc5658_settreble(FAR struct alc5658_dev_s *priv, uint8_t treble)
 #endif							/* CONFIG_AUDIO_EXCLUDE_TONE */
 
 /****************************************************************************
- * Name: alc5658_setdatawidth
+ * Name: alc5658_set_i2s_datawidth
  *
  * Description:
  *   Set the 8- 16- 24- bit data modes
  *
  ****************************************************************************/
-
-static void alc5658_setdatawidth(FAR struct alc5658_dev_s *priv)
+static void alc5658_set_i2s_datawidth(FAR struct alc5658_dev_s *priv)
 {
+	/* if no audio device object return */
+	if (!priv) {
+		auddbg("Error, Device's private data Not available\n");
+		return;
+	}
+
+	if (priv->inout) {
+		I2S_RXDATAWIDTH(priv->i2s, priv->bpsamp);
+	} else {
+		I2S_TXDATAWIDTH(priv->i2s, priv->bpsamp);
+	}
 }
 
 /****************************************************************************
- * Name: alc5658_setbitrate
+ * Name: alc5658_set_i2s_samplerate
  *
  * Description:
  *
  ****************************************************************************/
-
-static void alc5658_setbitrate(FAR struct alc5658_dev_s *priv)
+static void alc5658_set_i2s_samplerate(FAR struct alc5658_dev_s *priv)
 {
+	/* if no audio device object return */
+	if (!priv) {
+		auddbg("Error, Device's private data Not available\n");
+		return;
+	}
 
+	if (priv->inout) {
+		I2S_RXSAMPLERATE(priv->i2s, priv->samprate);
+	} else {
+		I2S_TXSAMPLERATE(priv->i2s, priv->samprate);
+	}
 }
 
 /****************************************************************************
@@ -454,17 +517,25 @@ static void alc5658_setbitrate(FAR struct alc5658_dev_s *priv)
  *   Get the audio device capabilities
  *
  ****************************************************************************/
-
 static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR struct audio_caps_s *caps)
 {
+#if !(defined(CONFIG_AUDIO_EXCLUDE_VOLUME) && defined(CONFIG_AUDIO_EXCLUDE_GAIN) && defined(CONFIG_AUDIO_EXCLUDE_TONE))
+	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
+#endif
 	/* Validate the structure */
 
 	DEBUGASSERT(caps && caps->ac_len >= sizeof(struct audio_caps_s));
 	audvdbg("type=%d ac_type=%d\n", type, caps->ac_type);
 
+#ifndef CONFIG_DEBUG
+	if (!caps) {
+		return -1;
+	}
+#endif
+
 	/* Fill in the caller's structure based on requested info */
 
-	caps->ac_format.hw = 0;
+	caps->ac_format.hw  = 0;
 	caps->ac_controls.w = 0;
 
 	switch (caps->ac_type) {
@@ -485,8 +556,7 @@ static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR stru
 			 */
 
 			/* The types of audio units we implement */
-
-			caps->ac_controls.b[0] = AUDIO_TYPE_OUTPUT | AUDIO_TYPE_FEATURE | AUDIO_TYPE_PROCESSING;
+			caps->ac_controls.b[0] = AUDIO_TYPE_INPUT | AUDIO_TYPE_OUTPUT | AUDIO_TYPE_FEATURE | AUDIO_TYPE_PROCESSING;
 
 			break;
 
@@ -503,8 +573,8 @@ static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR stru
 
 		break;
 
-	/* Provide capabilities of our OUTPUT unit */
-
+	/* Provide capabilities of our INPUT & OUTPUT unit */
+	case AUDIO_TYPE_INPUT:
 	case AUDIO_TYPE_OUTPUT:
 
 		caps->ac_channels = 2;
@@ -514,7 +584,8 @@ static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR stru
 
 			/* Report the Sample rates we support */
 
-			caps->ac_controls.b[0] = AUDIO_SAMP_RATE_8K | AUDIO_SAMP_RATE_11K | AUDIO_SAMP_RATE_16K | AUDIO_SAMP_RATE_22K | AUDIO_SAMP_RATE_32K | AUDIO_SAMP_RATE_44K | AUDIO_SAMP_RATE_48K;
+			caps->ac_controls.b[0] = AUDIO_SAMP_RATE_TYPE_8K | AUDIO_SAMP_RATE_TYPE_11K | AUDIO_SAMP_RATE_TYPE_16K | AUDIO_SAMP_RATE_TYPE_22K | AUDIO_SAMP_RATE_TYPE_32K | AUDIO_SAMP_RATE_TYPE_44K | AUDIO_SAMP_RATE_TYPE_48K;
+
 			break;
 
 		case AUDIO_FMT_MP3:
@@ -532,17 +603,37 @@ static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR stru
 
 	case AUDIO_TYPE_FEATURE:
 
-		/* If the sub-type is UNDEF, then report the Feature Units we support */
-
-		if (caps->ac_subtype == AUDIO_FU_UNDEF) {
+		switch (caps->ac_subtype) {
+		case AUDIO_FU_UNDEF:
+			/* If the sub-type is UNDEF, then report the Feature Units we support */
 			/* Fill in the ac_controls section with the Feature Units we have */
 
 			caps->ac_controls.b[0] = AUDIO_FU_VOLUME | AUDIO_FU_BASS | AUDIO_FU_TREBLE;
 			caps->ac_controls.b[1] = AUDIO_FU_BALANCE >> 8;
-		} else {
-			/* TODO:  Do we need to provide specific info for the Feature Units,
-			 * such as volume setting ranges, etc.?
-			 */
+			break;
+		case AUDIO_FU_VOLUME:
+			caps->ac_controls.hw[0] = ALC5658_HP_VOL_MAX;
+#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
+			caps->ac_controls.hw[1] = priv->volume;
+#else
+			caps->ac_controls.hw[1] = ALC5658_HP_VOL_DEFAULT;
+#endif
+			break;
+		case AUDIO_FU_INP_GAIN:
+			caps->ac_controls.hw[0] = ALC5658_GAIN_MAX;
+#ifndef CONFIG_AUDIO_EXCLUDE_GAIN
+			caps->ac_controls.hw[1] = priv->gain;
+#else
+			caps->ac_controls.hw[1] = ALC5658_GAIN_DEFAULT;
+#endif
+			break;
+#ifndef CONFIG_AUDIO_EXCLUDE_TONE
+		case AUDIO_FU_BASS:
+			caps->ac_controls.hw[1] = priv->volume; //ToDo: tone is currently not implemented yet.
+			break;
+#endif
+		default:
+			break;
 		}
 
 		break;
@@ -564,6 +655,13 @@ static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR stru
 			/* Provide capabilities of our Stereo Extender */
 
 			caps->ac_controls.b[0] = AUDIO_STEXT_ENABLE | AUDIO_STEXT_WIDTH;
+			break;
+
+		case AUDIO_PU_SPEECH_DETECT:
+
+			/* alc5658 doesn't provide speech detect processing */
+			
+			caps->ac_controls.b[0] = AUDIO_SD_UNDEF;
 			break;
 
 		default:
@@ -601,14 +699,13 @@ static int alc5658_getcaps(FAR struct audio_lowerhalf_s *dev, int type, FAR stru
  *   Configure the audio device for the specified  mode of operation.
  *
  ****************************************************************************/
-
 #ifdef CONFIG_AUDIO_MULTI_SESSION
 static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR void *session, FAR const struct audio_caps_s *caps)
 #else
 static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR const struct audio_caps_s *caps)
 #endif
 {
-#if !defined(CONFIG_AUDIO_EXCLUDE_VOLUME) || !defined(CONFIG_AUDIO_EXCLUDE_TONE)
+#if !(defined(CONFIG_AUDIO_EXCLUDE_GAIN) && defined(CONFIG_AUDIO_EXCLUDE_VOLUME) && defined(CONFIG_AUDIO_EXCLUDE_TONE))
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
 #endif
 	int ret = OK;
@@ -616,83 +713,102 @@ static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR const struct
 	DEBUGASSERT(priv && caps);
 	audvdbg("ac_type: %d\n", caps->ac_type);
 
-	/* Process the configure operation */
+#ifndef CONFIG_DEBUG
+	if (!caps) {
+		return -EINVAL;
+	}
+#endif
+
+	/* ALC5658 supports on the fly changes for almost all changes
+	   so no need to do anything. But if any issue, worth looking here */
 
 	switch (caps->ac_type) {
 	case AUDIO_TYPE_FEATURE:
 		audvdbg("  AUDIO_TYPE_FEATURE\n");
 
-		/* Process based on Feature Unit */
-
+		/* Inner swich case: Process based on Feature Unit */
 		switch (caps->ac_format.hw) {
-#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
 		case AUDIO_FU_VOLUME: {
+#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
 			/* Set the volume */
 
 			uint16_t volume = caps->ac_controls.hw[0];
-			audvdbg("    Volume: %d\n", volume);
 
-			if (volume >= 0 && volume <= 1000) {
-				/* Scale the volume setting to the range {0.. 63} */
-
-				alc5658_setvolume(priv, (63 * volume / 1000), priv->mute);
+			if (volume <= ALC5658_HP_VOL_MAX) {
+				audvdbg("    Volume: 0x%x\n", volume);
+				priv->volume = volume;
+				alc5658_setvolume(priv);
 			} else {
 				ret = -EDOM;
 			}
 		}
 		break;
-#endif							/* CONFIG_AUDIO_EXCLUDE_VOLUME */
 
+		case AUDIO_FU_MUTE: {
+			/* Mute or unmute:  true(1) or false(0) */
+
+			bool mute = caps->ac_controls.b[0];
+			audvdbg("mute: 0x%x\n", mute);
+			priv->mute = mute;
+			alc5658_setvolume(priv);
+		break;
+#else							/* CONFIG_AUDIO_EXCLUDE_VOLUME */
+		return -EACCES;
+#endif
+		}
 #ifndef CONFIG_AUDIO_EXCLUDE_TONE
 		case AUDIO_FU_BASS: {
 			/* Set the bass.  The percentage level (0-100) is in the
-			 * ac_controls.b[0] parameter.
-			 */
+			 * ac_controls.b[0] parameter. */
 
 			uint8_t bass = caps->ac_controls.b[0];
 			audvdbg("    Bass: %d\n", bass);
-
 			if (bass <= 100) {
 				alc5658_setbass(priv, bass);
-			} else {
-				ret = -EDOM;
 			}
 		}
 		break;
-
 		case AUDIO_FU_TREBLE: {
 			/* Set the treble.  The percentage level (0-100) is in the
-			 * ac_controls.b[0] parameter.
-			 */
+			 * ac_controls.b[0] parameter. */
 
 			uint8_t treble = caps->ac_controls.b[0];
 			audvdbg("    Treble: %d\n", treble);
-
 			if (treble <= 100) {
 				alc5658_settreble(priv, treble);
-			} else {
-				ret = -EDOM;
 			}
 		}
 		break;
-#endif							/* CONFIG_AUDIO_EXCLUDE_TONE */
+#endif
 
+		case AUDIO_FU_INP_GAIN: {
+#ifndef CONFIG_AUDIO_EXCLUDE_GAIN
+			/* Set the gain */
+			uint16_t gain = caps->ac_controls.hw[0];
+
+			if (gain <= ALC5658_GAIN_MAX) {
+				audvdbg(" INP Gain: 0x%x\n", gain);
+				priv->gain = gain;
+				alc5658_set_inport_gain(priv);
+			} else {
+				ret = -EDOM;
+			}
+			break;
+#else							/* CONFIG_AUDIO_EXCLUDE_GAIN */
+			return -EACCES;
+#endif
+		}
 		default:
 			auddbg("    ERROR: Unrecognized feature unit\n");
-			ret = -ENOTTY;
 			break;
 		}
-		break;
-
-	case AUDIO_TYPE_OUTPUT: {
-		audvdbg("  AUDIO_TYPE_OUTPUT:\n");
-		audvdbg("    Number of channels: %u\n", caps->ac_channels);
-		audvdbg("    Sample rate:        %u\n", caps->ac_controls.hw[0]);
-		audvdbg("    Sample width:       %u\n", caps->ac_controls.b[2]);
-
+		break;					/* Break for inner switch case */
+	case AUDIO_TYPE_INPUT:
+	case AUDIO_TYPE_OUTPUT:
+		audvdbg("  AUDIO_TYPE :%s\n", caps->ac_type == AUDIO_TYPE_INPUT ? "INPUT" : "OUTPUT");
 		/* Verify that all of the requested values are supported */
 
-		ret = -ERANGE;
+		ret = -EDOM;
 		if (caps->ac_channels != 1 && caps->ac_channels != 2) {
 			auddbg("ERROR: Unsupported number of channels: %d\n", caps->ac_channels);
 			break;
@@ -703,28 +819,38 @@ static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR const struct
 			break;
 		}
 
-		/* Save the current stream configuration */
+		/* Check validation of sample rate first */
+		if (alc5658_get_sample_rate_script(caps->ac_controls.hw[0]) == -1) {
+			auddbg("ERROR: Not supported Format: %lld\n", caps->ac_controls.hw[0]);
+			return -EINVAL;
+		}
 
+		/* Save the current stream configuration */
 		priv->samprate = caps->ac_controls.hw[0];
 		priv->nchannels = caps->ac_channels;
 		priv->bpsamp = caps->ac_controls.b[2];
 
+		audvdbg("    Number of channels: 0x%x\n", priv->nchannels);
+		audvdbg("    Sample rate:        0x%x\n", priv->samprate);
+		audvdbg("    Sample width:       0x%x\n", priv->bpsamp);
+
 		/* Reconfigure the FLL to support the resulting number or channels,
 		 * bits per sample, and bitrate.
 		 */
-
-		alc5658_setdatawidth(priv);
-		alc5658_setbitrate(priv);
-
-		alc5658_clock_analysis(&priv->dev, "AUDIO_TYPE_OUTPUT");
 		ret = OK;
-	}
-	break;
+		if (caps->ac_type == AUDIO_TYPE_INPUT) {
+			priv->inout = true;
+		} else {
+			priv->inout = false;
+		}
+		break;
 
 	case AUDIO_TYPE_PROCESSING:
 		break;
+	default:
+		ret = -EINVAL;
+		break;
 	}
-
 	return ret;
 }
 
@@ -735,16 +861,36 @@ static int alc5658_configure(FAR struct audio_lowerhalf_s *dev, FAR const struct
  *   Shutdown the ALC5658 chip and put it in the lowest power state possible.
  *
  ****************************************************************************/
-
 static int alc5658_shutdown(FAR struct audio_lowerhalf_s *dev)
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
 
 	DEBUGASSERT(priv);
 
-	/* First disable interrupts */
+	if (!priv) {
+		return -EINVAL;
+	}
 
+	/* First disable interrupts */
 	ALC5658_DISABLE(priv->lower);
+
+	alc5658_takesem(&priv->devsem);
+
+	if (priv->inout) {
+		I2S_STOP(priv->i2s, I2S_RX);
+	} else {
+		I2S_STOP(priv->i2s, I2S_TX);
+	}
+
+	sq_entry_t *tmp = NULL;
+	for (tmp = (sq_entry_t *)sq_peek(&priv->pendq); tmp; tmp = sq_next(tmp)) {
+		sq_rem(tmp, &priv->pendq);
+		audvdbg("(alcshutdown)removing tmp with addr 0x%x\n", tmp);
+	}
+	sq_init(&priv->pendq);
+	priv->paused = false;
+	priv->running = false;
+	alc5658_givesem(&priv->devsem);
 
 	/* Now issue a software reset.  This puts all ALC5658 registers back in
 	 * their default state.
@@ -755,206 +901,23 @@ static int alc5658_shutdown(FAR struct audio_lowerhalf_s *dev)
 }
 
 /****************************************************************************
- * Name: alc5658_senddone
+ * Name: alc5658_io_err_cb
  *
  * Description:
- *   This is the I2S callback function that is invoked when the transfer
- *   completes.
+ *   Callback function for io error
  *
  ****************************************************************************/
-
-static void alc5658_senddone(FAR struct i2s_dev_s *i2s, FAR struct ap_buffer_s *apb, FAR void *arg, int result)
+static void alc5658_io_err_cb(FAR struct i2s_dev_s *dev, FAR void *arg, int flags)
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)arg;
-	struct audio_msg_s msg;
-	irqstate_t flags;
-	int ret;
 
-	DEBUGASSERT(i2s && priv && priv->running && apb);
-	audvdbg("apb=%p inflight=%d result=%d\n", apb, priv->inflight, result);
-
-	/* We do not place any restriction on the context in which this function
-	 * is called.  It may be called from an interrupt handler.  Therefore, the
-	 * doneq and in-flight values might be accessed from the interrupt level.
-	 * Not the best design.  But we will use interrupt controls to protect
-	 * against that possibility.
+	/* Call upper callback, let it post msg to user q
+	 * apb is set NULL, okay? Rethink
 	 */
-
-	flags = irqsave();
-
-	/* Add the completed buffer to the end of our doneq.  We do not yet
-	 * decrement the reference count.
-	 */
-
-	dq_addlast((FAR dq_entry_t *) apb, &priv->doneq);
-
-	/* And decrement the number of buffers in-flight */
-
-	DEBUGASSERT(priv->inflight > 0);
-	priv->inflight--;
-
-	/* Save the result of the transfer */
-	/* REVISIT:  This can be overwritten */
-
-	priv->result = result;
-	irqrestore(flags);
-
-	/* Now send a message to the worker thread, informing it that there are
-	 * buffers in the done queue that need to be cleaned up.
-	 */
-
-	msg.msgId = AUDIO_MSG_COMPLETE;
-	ret = mq_send(priv->mq, (FAR const char *)&msg, sizeof(msg), CONFIG_ALC5658_MSG_PRIO);
-	if (ret < 0) {
-		auddbg("ERROR: mq_send failed: %d\n", errno);
-	}
-}
-
-/****************************************************************************
- * Name: alc5658_returnbuffers
- *
- * Description:
- *   This function is called after the complete of one or more data
- *   transfers.  This function will empty the done queue and release our
- *   reference to each buffer.
- *
- ****************************************************************************/
-
-static void alc5658_returnbuffers(FAR struct alc5658_dev_s *priv)
-{
-	FAR struct ap_buffer_s *apb;
-	irqstate_t flags;
-
-	/* The doneq and in-flight values might be accessed from the interrupt
-	 * level in some implementations.  Not the best design.  But we will
-	 * use interrupt controls to protect against that possibility.
-	 */
-
-	flags = irqsave();
-	while (dq_peek(&priv->doneq) != NULL) {
-		/* Take the next buffer from the queue of completed transfers */
-
-		apb = (FAR struct ap_buffer_s *)dq_remfirst(&priv->doneq);
-		irqrestore(flags);
-
-		audvdbg("Returning: apb=%p curbyte=%d nbytes=%d flags=%04x\n", apb, apb->curbyte, apb->nbytes, apb->flags);
-
-		/* Are we returning the final buffer in the stream? */
-
-		if ((apb->flags & AUDIO_APB_FINAL) != 0) {
-			/* Both the pending and the done queues should be empty and there
-			 * should be no buffers in-flight.
-			 */
-
-			DEBUGASSERT(dq_empty(&priv->doneq) && dq_empty(&priv->pendq) && priv->inflight == 0);
-
-			/* Set the terminating flag.  This will, eventually, cause the
-			 * worker thread to exit (if it is not already terminating).
-			 */
-
-			audvdbg("Terminating\n");
-			priv->terminating = true;
-		}
-
-		/* Release our reference to the audio buffer */
-
-		apb_free(apb);
-
-		/* Send the buffer back up to the previous level. */
-
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-		priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_DEQUEUE, apb, OK, NULL);
-#else
-		priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_DEQUEUE, apb, OK);
-#endif
-		flags = irqsave();
+	if (priv && priv->dev.upper) {
+		priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_IOERR, NULL, flags);
 	}
 
-	irqrestore(flags);
-}
-
-/****************************************************************************
- * Name: alc5658_sendbuffer
- *
- * Description:
- *   Start the transfer an audio buffer to the ALC5658 via I2S.  This
- *   will not wait for the transfer to complete but will return immediately.
- *   the alc5658 called will be invoked when the transfer
- *   completes, stimulating the worker thread to call this function again.
- *
- ****************************************************************************/
-
-static int alc5658_sendbuffer(FAR struct alc5658_dev_s *priv)
-{
-	FAR struct ap_buffer_s *apb;
-	irqstate_t flags;
-	uint32_t timeout;
-	int shift;
-	int ret = OK;
-
-	/* Loop while there are audio buffers to be sent and we have few than
-	 * CONFIG_ALC5658_INFLIGHT then "in-flight"
-	 *
-	 * The 'inflight' value might be modified from the interrupt level in some
-	 * implementations.  We will use interrupt controls to protect against
-	 * that possibility.
-	 *
-	 * The 'pendq', on the other hand, is protected via a semaphore.  Let's
-	 * hold the semaphore while we are busy here and disable the interrupts
-	 * only while accessing 'inflight'.
-	 */
-
-	alc5658_takesem(&priv->pendsem);
-	while (priv->inflight < CONFIG_ALC5658_INFLIGHT && dq_peek(&priv->pendq) != NULL && !priv->paused) {
-		/* Take next buffer from the queue of pending transfers */
-
-		apb = (FAR struct ap_buffer_s *)dq_remfirst(&priv->pendq);
-		audvdbg("Sending apb=%p, size=%d inflight=%d\n", apb, apb->nbytes, priv->inflight);
-
-		/* Increment the number of buffers in-flight before sending in order
-		 * to avoid a possible race condition.
-		 */
-
-		flags = irqsave();
-		priv->inflight++;
-		irqrestore(flags);
-
-		/* Send the entire audio buffer via I2S.  What is a reasonable timeout
-		 * to use?  This would depend on the bit rate and size of the buffer.
-		 *
-		 * Samples in the buffer (samples):
-		 *   = buffer_size * 8 / bpsamp                           samples
-		 * Sample rate (samples/second):
-		 *   = samplerate * nchannels
-		 * Expected transfer time (seconds):
-		 *   = (buffer_size * 8) / bpsamp / samplerate / nchannels
-		 *
-		 * We will set the timeout about twice that.
-		 *
-		 * NOTES:
-		 * - The multiplier of 8 becomes 16000 for 2x and units of
-		 *   milliseconds.
-		 * - 16000 is a approximately 16384 (1 << 14), bpsamp is either
-		 *   (1 << 3) or (1 << 4), and nchannels is either (1 << 0) or
-		 *   (1 << 1).  So this can be simplifies to (milliseconds):
-		 *
-		 *   = (buffer_size << shift) / samplerate
-		 */
-
-		shift = (priv->bpsamp == 8) ? 14 - 3 : 14 - 4;
-		shift -= (priv->nchannels > 1) ? 1 : 0;
-
-		timeout = MSEC2TICK(((uint32_t)(apb->nbytes - apb->curbyte) << shift) / (uint32_t) priv->samprate);
-
-		ret = I2S_SEND(priv->i2s, apb, alc5658_senddone, priv, timeout);
-		if (ret < 0) {
-			auddbg("ERROR: I2S_SEND failed: %d\n", ret);
-			break;
-		}
-	}
-
-	alc5658_givesem(&priv->pendsem);
-	return ret;
 }
 
 /****************************************************************************
@@ -971,59 +934,40 @@ static int alc5658_start(FAR struct audio_lowerhalf_s *dev, FAR void *session)
 static int alc5658_start(FAR struct audio_lowerhalf_s *dev)
 #endif
 {
-	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
-	struct sched_param sparam;
-	struct mq_attr attr;
-	pthread_attr_t tattr;
-	FAR void *value;
-	int ret;
 
-	audvdbg("Entry\n");
+	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
+
+	if (!priv) {
+		return -EINVAL;
+	}
+
+	audvdbg(" alc5658_start Entry\n");
+	alc5658_takesem(&priv->devsem);
+
+	if (priv->running) {
+		goto alcstart_withsem;
+	}
+
+	/* Register cb for io error */
+	I2S_ERR_CB_REG(priv->i2s, alc5658_io_err_cb, priv);
+
+	/* Finally set alc5658 to be running */
+	priv->running = true;
+
+	/* Enqueue buffers (enqueueed before the start of alc) to lower layer */
+	sq_entry_t *tmp = NULL;
+	sq_queue_t *q = &priv->pendq;
+	for (tmp = sq_peek(q); tmp; tmp = sq_next(tmp)) {
+		alc5658_enqueuebuffer(dev, (struct ap_buffer_s *)tmp);
+	}
 
 	/* Exit reduced power modes of operation */
 	/* REVISIT */
 
-	/* Create a message queue for the worker thread */
+alcstart_withsem:
 
-	snprintf(priv->mqname, sizeof(priv->mqname), "/tmp/%X", priv);
-
-	attr.mq_maxmsg = 16;
-	attr.mq_msgsize = sizeof(struct audio_msg_s);
-	attr.mq_curmsgs = 0;
-	attr.mq_flags = 0;
-
-	priv->mq = mq_open(priv->mqname, O_RDWR | O_CREAT, 0644, &attr);
-	if (priv->mq == NULL) {
-		/* Error creating message queue! */
-
-		auddbg("ERROR: Couldn't allocate message queue\n");
-		return -ENOMEM;
-	}
-
-	/* Join any old worker thread we had created to prevent a memory leak */
-
-	if (priv->threadid != 0) {
-		audvdbg("Joining old thread\n");
-		pthread_join(priv->threadid, &value);
-	}
-
-	/* Start our thread for sending data to the device */
-
-	pthread_attr_init(&tattr);
-	sparam.sched_priority = sched_get_priority_max(SCHED_FIFO) - 3;
-	(void)pthread_attr_setschedparam(&tattr, &sparam);
-	(void)pthread_attr_setstacksize(&tattr, CONFIG_ALC5658_WORKER_STACKSIZE);
-
-	audvdbg("Starting worker thread\n");
-	ret = pthread_create(&priv->threadid, &tattr, alc5658_workerthread, (pthread_addr_t) priv);
-	if (ret != OK) {
-		auddbg("ERROR: pthread_create failed: %d\n", ret);
-	} else {
-		pthread_setname_np(priv->threadid, "alc5658");
-		audvdbg("Created worker thread\n");
-	}
-
-	return ret;
+	alc5658_givesem(&priv->devsem);
+	return OK;
 }
 
 /****************************************************************************
@@ -1042,19 +986,24 @@ static int alc5658_stop(FAR struct audio_lowerhalf_s *dev)
 #endif
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
-	struct audio_msg_s term_msg;
-	FAR void *value;
 
-	/* Send a message to stop all audio streaming */
+	if (!priv) {
+		return -EINVAL;
+	}
+	alc5658_takesem(&priv->devsem);
 
-	term_msg.msgId = AUDIO_MSG_STOP;
-	term_msg.u.data = 0;
-	mq_send(priv->mq, (FAR const char *)&term_msg, sizeof(term_msg), CONFIG_ALC5658_MSG_PRIO);
+	if (priv->inout) {
+		I2S_STOP(priv->i2s, I2S_RX);
+	} else {
+		I2S_STOP(priv->i2s, I2S_TX);
+	}
 
-	/* Join the worker thread */
+	/* Need to run the stop script here */
+	alc5658_exec_i2c_script(priv, codec_stop_script, sizeof(codec_stop_script) / sizeof(t_codec_init_script_entry));
 
-	pthread_join(priv->threadid, &value);
-	priv->threadid = 0;
+	priv->running = false;
+	priv->paused = false;
+	alc5658_givesem(&priv->devsem);
 
 	/* Enter into a reduced power usage mode */
 	/* REVISIT: */
@@ -1069,7 +1018,6 @@ static int alc5658_stop(FAR struct audio_lowerhalf_s *dev)
  * Description: Pauses the playback.
  *
  ****************************************************************************/
-
 #ifndef CONFIG_AUDIO_EXCLUDE_PAUSE_RESUME
 #ifdef CONFIG_AUDIO_MULTI_SESSION
 static int alc5658_pause(FAR struct audio_lowerhalf_s *dev, FAR void *session)
@@ -1079,13 +1027,32 @@ static int alc5658_pause(FAR struct audio_lowerhalf_s *dev)
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
 
+	if (!priv) {
+		return -EINVAL;
+	}
+
+	alc5658_takesem(&priv->devsem);
+
 	if (priv->running && !priv->paused) {
 		/* Disable interrupts to prevent us from suppling any more data */
 
 		priv->paused = true;
-		alc5658_setvolume(priv, priv->volume, true);
-		ALC5658_DISABLE(priv->lower);
+
+		/* Need control priv->mute */
+#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
+		alc5658_setvolume(priv);
+#endif
+		if (priv->inout) {
+			I2S_PAUSE(priv->i2s, I2S_RX);
+		} else {
+			I2S_PAUSE(priv->i2s, I2S_TX);
+		}
+#ifdef ALC5658_USE_FFLOCK_INT
+		ALC5658_DISABLE(priv->lower);	/* Need inputs from REALTEK */
+#endif
 	}
+
+	alc5658_givesem(&priv->devsem);
 
 	return OK;
 }
@@ -1097,7 +1064,6 @@ static int alc5658_pause(FAR struct audio_lowerhalf_s *dev)
  * Description: Resumes the playback.
  *
  ****************************************************************************/
-
 #ifndef CONFIG_AUDIO_EXCLUDE_PAUSE_RESUME
 #ifdef CONFIG_AUDIO_MULTI_SESSION
 static int alc5658_resume(FAR struct audio_lowerhalf_s *dev, FAR void *session)
@@ -1107,21 +1073,71 @@ static int alc5658_resume(FAR struct audio_lowerhalf_s *dev)
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
 
+	if (!priv) {
+		return -EINVAL;
+	}
+
+	alc5658_takesem(&priv->devsem);
+
 	if (priv->running && priv->paused) {
 		priv->paused = false;
-		alc5658_setvolume(priv, priv->volume, false);
 
-		/* Enable interrupts to allow sampling data */
+		/* Need control priv->mute */
+#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
+		alc5658_setvolume(priv);
+#endif
+		if (priv->inout) {
+			I2S_RESUME(priv->i2s, I2S_RX);
+		} else {
+			I2S_RESUME(priv->i2s, I2S_TX);
+		}
 
-		alc5658_sendbuffer(priv);
 #ifdef ALC5658_USE_FFLOCK_INT
-		ALC5658_ENABLE(priv->lower);
+		ALC5658_ENABLE(priv->lower);	/* Need inputs from REALTEK */
 #endif
 	}
 
+	alc5658_givesem(&priv->devsem);
 	return OK;
 }
 #endif							/* CONFIG_AUDIO_EXCLUDE_PAUSE_RESUME */
+
+/****************************************************************************
+ * Name: alc5658_rxcallback
+ *
+ * Description: Called when I2S filled a buffer. No recycling mechanism now.
+ *
+ ****************************************************************************/
+
+static void alc5658_rxtxcallback(FAR struct i2s_dev_s *dev, FAR struct ap_buffer_s *apb, FAR void *arg, int result)
+{
+	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)arg;
+
+	DEBUGASSERT(priv && apb);
+	audvdbg("alc5658_rxcallback, devaddr= 0x%x, apbaddr  =0x%x\n", dev, apb);
+
+	if (!priv) {
+		audvdbg("alc5658_rxcallback, no private data available\n");
+		return;
+	}
+
+	alc5658_takesem(&priv->devsem);
+	sq_entry_t *tmp;
+	for (tmp = (sq_entry_t *)sq_peek(&priv->pendq); tmp; tmp = sq_next(tmp)) {
+		if (tmp == (sq_entry_t *)apb) {
+			sq_rem(tmp, &priv->pendq);
+			audvdbg("found the apb to remove 0x%x\n", tmp);
+			break;
+		}
+	}
+
+	audvdbg("i2s transcation result: 0x%x\n", result);
+
+	/* Call upper callback, let it post msg to user q */
+	priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_DEQUEUE, apb, OK);
+
+	alc5658_givesem(&priv->devsem);
+}
 
 /****************************************************************************
  * Name: alc5658_enqueuebuffer
@@ -1129,46 +1145,33 @@ static int alc5658_resume(FAR struct audio_lowerhalf_s *dev)
  * Description: Enqueue an Audio Pipeline Buffer for playback/ processing.
  *
  ****************************************************************************/
-
 static int alc5658_enqueuebuffer(FAR struct audio_lowerhalf_s *dev, FAR struct ap_buffer_s *apb)
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
-	struct audio_msg_s term_msg;
 	int ret;
 
-	audvdbg("Enqueueing: apb=%p curbyte=%d nbytes=%d flags=%04x\n", apb, apb->curbyte, apb->nbytes, apb->flags);
-
-	/* Take a reference on the new audio buffer */
-
-	apb_reference(apb);
-
-	/* Add the new buffer to the tail of pending audio buffers */
-
-	alc5658_takesem(&priv->pendsem);
-	apb->flags |= AUDIO_APB_OUTPUT_ENQUEUED;
-	dq_addlast(&apb->dq_entry, &priv->pendq);
-	alc5658_givesem(&priv->pendsem);
-
-	/* Send a message to the worker thread indicating that a new buffer has been
-	 * enqueued.  If mq is NULL, then the playing has not yet started.  In that
-	 * case we are just "priming the pump" and we don't need to send any message.
-	 */
-
-	ret = OK;
-	if (priv->mq != NULL) {
-		term_msg.msgId = AUDIO_MSG_ENQUEUE;
-		term_msg.u.data = 0;
-
-		ret = mq_send(priv->mq, (FAR const char *)&term_msg, sizeof(term_msg), CONFIG_ALC5658_MSG_PRIO);
-		if (ret < 0) {
-			int errcode = errno;
-			DEBUGASSERT(errcode > 0);
-
-			auddbg("ERROR: mq_send failed: %d\n", errcode);
-			UNUSED(errcode);
-		}
+	if (!priv || !apb) {
+		return -EINVAL;
 	}
 
+	audvdbg("alc5658_enqueuebuffer: apbadr = 0x%x\n", apb);
+
+	if (!priv->running) {
+		/* Add the new buffer to the tail of pending audio buffers */
+		alc5658_takesem(&priv->devsem);
+		sq_addlast((sq_entry_t *)&apb->dq_entry, &priv->pendq);
+		audvdbg("enqueue added buf 0x%x\n", apb);
+		alc5658_givesem(&priv->devsem);
+		return OK;
+	}
+
+	if (priv->inout) {			/* record */
+		ret = I2S_RECEIVE(priv->i2s, apb, alc5658_rxtxcallback, priv, CONFIG_ALC5658_I2S_TIMEOUT);
+	} else {					/* playback */
+		ret = I2S_SEND(priv->i2s, apb, alc5658_rxtxcallback, priv, CONFIG_ALC5658_I2S_TIMEOUT);
+	}
+
+	audvdbg("I2s  returned 0x%x\n", ret);
 	return ret;
 }
 
@@ -1178,10 +1181,10 @@ static int alc5658_enqueuebuffer(FAR struct audio_lowerhalf_s *dev, FAR struct a
  * Description: Called when an enqueued buffer is being cancelled.
  *
  ****************************************************************************/
-
 static int alc5658_cancelbuffer(FAR struct audio_lowerhalf_s *dev, FAR struct ap_buffer_s *apb)
 {
 	audvdbg("apb=%p\n", apb);
+	/* Need to add logic here */
 	return OK;
 }
 
@@ -1191,44 +1194,97 @@ static int alc5658_cancelbuffer(FAR struct audio_lowerhalf_s *dev, FAR struct ap
  * Description: Perform a device ioctl
  *
  ****************************************************************************/
-
 static int alc5658_ioctl(FAR struct audio_lowerhalf_s *dev, int cmd, unsigned long arg)
 {
-#ifdef CONFIG_AUDIO_DRIVER_SPECIFIC_BUFFERS
 	FAR struct ap_buffer_info_s *bufinfo;
-#endif
+	apb_samp_t buf_size;
+	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
+
+	if (!priv) {
+		return -EINVAL;
+	}
 
 	/* Deal with ioctls passed from the upper-half driver */
 
 	switch (cmd) {
-	/* Check for AUDIOIOC_HWRESET ioctl.  This ioctl is passed straight
-	 * through from the upper-half audio driver.
-	 */
 
-	case AUDIOIOC_HWRESET: {
-		/* REVISIT:  Should we completely re-initialize the chip?   We
-		 * can't just issue a software reset; that would puts all ALC5658
-		 * registers back in their default state.
-		 */
+	case AUDIOIOC_PREPARE: {
+		audvdbg("AUDIOIOC_PREPARE: alc5658 prepare\n");
+		int entry;
 
-		audvdbg("AUDIOIOC_HWRESET:\n");
+		/* Take semaphore */
+		alc5658_takesem(&priv->devsem);
+
+		/* Pause i2s channel */
+		if (priv->inout) {
+			I2S_PAUSE(priv->i2s, I2S_RX);
+		} else {
+			I2S_PAUSE(priv->i2s, I2S_TX);
+		}
+
+		/*Reconfigure alc5658 */
+		/* Set first set of registers */
+		alc5658_exec_i2c_script(priv, codec_init_inout_script1, sizeof(codec_init_inout_script1) / sizeof(t_codec_init_script_entry));
+
+		/* Get configured sample rate and set it here - valdiation done in configure itself */
+		entry = alc5658_get_sample_rate_script(priv->samprate);
+		alc5658_exec_i2c_script(priv, g_sample_entry[entry].script, g_sample_entry[entry].size / sizeof(t_codec_init_script_entry));
+
+		/* Set second set of registers */
+		alc5658_exec_i2c_script(priv, codec_init_inout_script2, sizeof(codec_init_inout_script2) / sizeof(t_codec_init_script_entry));
+#ifndef CONFIG_AUDIO_EXCLUDE_VOLUME
+		/* TOCHECK: Possible to cut the two level execution of alc scritps so as to cut the time? */
+		alc5658_setvolume(priv);
+#endif
+#ifndef CONFIG_AUDIO_EXCLUDE_GAIN
+		/* Set the configured gain */
+		alc5658_set_inport_gain(priv);
+#endif
+		/* Resume I2S */
+		if (priv->inout) {
+			I2S_RESUME(priv->i2s, I2S_RX);
+		} else {
+			I2S_RESUME(priv->i2s, I2S_TX);
+		}
+
+		/* Give semaphore */
+		alc5658_givesem(&priv->devsem);
 	}
 	break;
-
-		/* Report our preferred buffer size and quantity */
-
-#ifdef CONFIG_AUDIO_DRIVER_SPECIFIC_BUFFERS
+	case AUDIOIOC_HWRESET: {
+		/* This should put ALC5658 in default state, reconfiguration needed */
+		audvdbg("AUDIOIOC_HWRESET: No Action Would be taken now \n");
+	}
+	break;
 	case AUDIOIOC_GETBUFFERINFO: {
+		/* Report our preferred buffer size and quantity */
 		audvdbg("AUDIOIOC_GETBUFFERINFO:\n");
+		/* Take semaphore */
+		alc5658_takesem(&priv->devsem);
+
 		bufinfo = (FAR struct ap_buffer_info_s *)arg;
+#ifdef CONFIG_AUDIO_DRIVER_SPECIFIC_BUFFERS
 		bufinfo->buffer_size = CONFIG_ALC5658_BUFFER_SIZE;
 		bufinfo->nbuffers = CONFIG_ALC5658_NUM_BUFFERS;
+#else
+		buf_size = bufinfo->buffer_size * (priv->bpsamp >> 3) * priv->nchannels;
+
+		if (buf_size > DMA_BUFFER_MAX_SIZE || buf_size < DMA_BUFFER_MIN_SIZE) {
+			bufinfo->buffer_size = CONFIG_ALC5658_BUFFER_SIZE;
+		}
+
+		if (bufinfo->nbuffers < AUDIO_BUFFER_MIN_NUM || bufinfo->nbuffers > AUDIO_BUFFER_MAX_NUM) {
+			bufinfo->nbuffers = CONFIG_ALC5658_NUM_BUFFERS;
+		}
+		audvdbg("buffer_size : %d nbuffers : %d buf_size : %d\n", bufinfo->buffer_size, bufinfo->nbuffers, buf_size);
+
+		/* Give semaphore */
+		alc5658_givesem(&priv->devsem);
+#endif
 	}
 	break;
-#endif
-
 	default:
-		audvdbg("Ignored\n");
+		audvdbg("alc5658_ioctl received unkown cmd 0x%x\n", cmd);
 		break;
 	}
 
@@ -1241,7 +1297,6 @@ static int alc5658_ioctl(FAR struct audio_lowerhalf_s *dev, int cmd, unsigned lo
  * Description: Reserves a session (the only one we have).
  *
  ****************************************************************************/
-
 #ifdef CONFIG_AUDIO_MULTI_SESSION
 static int alc5658_reserve(FAR struct audio_lowerhalf_s *dev, FAR void **session)
 #else
@@ -1251,9 +1306,13 @@ static int alc5658_reserve(FAR struct audio_lowerhalf_s *dev)
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
 	int ret = OK;
 
+	if (!priv) {
+		return -EINVAL;
+	}
+
 	/* Borrow the APBQ semaphore for thread sync */
 
-	alc5658_takesem(&priv->pendsem);
+	alc5658_takesem(&priv->devsem);
 	if (priv->reserved) {
 		ret = -EBUSY;
 	} else {
@@ -1271,7 +1330,7 @@ static int alc5658_reserve(FAR struct audio_lowerhalf_s *dev)
 		priv->reserved = true;
 	}
 
-	alc5658_givesem(&priv->pendsem);
+	alc5658_givesem(&priv->devsem);
 
 	return ret;
 }
@@ -1282,7 +1341,6 @@ static int alc5658_reserve(FAR struct audio_lowerhalf_s *dev)
  * Description: Releases the session (the only one we have).
  *
  ****************************************************************************/
-
 #ifdef CONFIG_AUDIO_MULTI_SESSION
 static int alc5658_release(FAR struct audio_lowerhalf_s *dev, FAR void *session)
 #else
@@ -1290,23 +1348,14 @@ static int alc5658_release(FAR struct audio_lowerhalf_s *dev)
 #endif
 {
 	FAR struct alc5658_dev_s *priv = (FAR struct alc5658_dev_s *)dev;
-	void *value;
 
-	/* Join any old worker thread we had created to prevent a memory leak */
-
-	if (priv->threadid != 0) {
-		pthread_join(priv->threadid, &value);
-		priv->threadid = 0;
+	if (!priv) {
+		return -EINVAL;
 	}
 
-	/* Borrow the APBQ semaphore for thread sync */
-
-	alc5658_takesem(&priv->pendsem);
-
-	/* Really we should free any queued buffers here */
-
+	alc5658_takesem(&priv->devsem);
 	priv->reserved = false;
-	alc5658_givesem(&priv->pendsem);
+	alc5658_givesem(&priv->devsem);
 
 	return OK;
 }
@@ -1323,7 +1372,6 @@ static int alc5658_release(FAR struct audio_lowerhalf_s *dev)
  *   ALC5658 interrupts were disabled in the interrupt handler.
  *
  ****************************************************************************/
-
 #ifdef ALC5658_USE_FFLOCK_INT
 static void alc5658_interrupt_work(FAR void *arg)
 {
@@ -1331,6 +1379,10 @@ static void alc5658_interrupt_work(FAR void *arg)
 	uint16_t regval;
 
 	DEBUGASSERT(priv && priv->lower);
+
+	if (!priv) {
+		return;
+	}
 
 	/* Sample the interrupt status */
 
@@ -1386,6 +1438,10 @@ static int alc5658_interrupt(FAR const struct alc5658_lower_s *lower, FAR void *
 
 	DEBUGASSERT(lower && priv);
 
+	if (!priv || !lower) {
+		return -EINVAL;
+	}
+
 	/* Disable further interrupts and perform all interrupt related activities
 	 * on the work thread.  There is nothing that we can do from the interrupt
 	 * handler because we cannot perform I2C operations here.
@@ -1394,7 +1450,7 @@ static int alc5658_interrupt(FAR const struct alc5658_lower_s *lower, FAR void *
 	ALC5658_DISABLE(priv->lower);
 
 	DEBUGASSERT(work_available(&priv->work));
-	ret = work_queue(LPWORK, &priv->work, alc5658_interrupt_work, priv, 0);
+	ret = work_queue(HPWORK, &priv->work, alc5658_interrupt_work, priv, 0);
 	if (ret < 0) {
 		auddbg("ERROR: Failed to schedule work\n");
 	}
@@ -1402,157 +1458,6 @@ static int alc5658_interrupt(FAR const struct alc5658_lower_s *lower, FAR void *
 	return OK;
 }
 #endif
-
-/****************************************************************************
- * Name: alc5658_workerthread
- *
- *  This is the thread that feeds data to the chip and keeps the audio
- *  stream going.
- *
- ****************************************************************************/
-
-static void *alc5658_workerthread(pthread_addr_t pvarg)
-{
-	FAR struct alc5658_dev_s *priv = (struct alc5658_dev_s *)pvarg;
-	struct audio_msg_s msg;
-	FAR struct ap_buffer_s *apb;
-	int msglen;
-	int prio;
-
-	audvdbg("Entry\n");
-
-#ifndef CONFIG_AUDIO_EXCLUDE_STOP
-	priv->terminating = false;
-#endif
-
-	/* Mark ourself as running and make sure that ALC5658 interrupts are
-	 * enabled.
-	 */
-
-	priv->running = true;
-#ifdef ALC5658_USE_FFLOCK_INT
-	ALC5658_ENABLE(priv->lower);
-#endif
-	alc5658_setvolume(priv, priv->volume, false);
-
-	/* Loop as long as we are supposed to be running and as long as we have
-	 * buffers in-flight.
-	 */
-
-	while (priv->running || priv->inflight > 0) {
-		/* Check if we have been asked to terminate.  We have to check if we
-		 * still have buffers in-flight.  If we do, then we can't stop until
-		 * birds come back to roost.
-		 */
-
-		if (priv->terminating && priv->inflight <= 0) {
-			/* We are IDLE.  Break out of the loop and exit. */
-
-			break;
-		} else {
-			/* Check if we can send more audio buffers to the ALC5658 */
-
-			alc5658_sendbuffer(priv);
-		}
-
-		/* Wait for messages from our message queue */
-
-		msglen = mq_receive(priv->mq, (FAR char *)&msg, sizeof(msg), &prio);
-
-		/* Handle the case when we return with no message */
-
-		if (msglen < sizeof(struct audio_msg_s)) {
-			auddbg("ERROR: Message too small: %d\n", msglen);
-			continue;
-		}
-
-		/* Process the message */
-
-		switch (msg.msgId) {
-		/* The ISR has requested more data.  We will catch this case at
-		 * the top of the loop.
-		 */
-
-		case AUDIO_MSG_DATA_REQUEST:
-			audvdbg("AUDIO_MSG_DATA_REQUEST\n");
-			break;
-
-			/* Stop the playback */
-
-#ifndef CONFIG_AUDIO_EXCLUDE_STOP
-		case AUDIO_MSG_STOP:
-			/* Indicate that we are terminating */
-
-			audvdbg("AUDIO_MSG_STOP: Terminating\n");
-			priv->terminating = true;
-			break;
-#endif
-
-		/* We have a new buffer to send.  We will catch this case at
-		 * the top of the loop.
-		 */
-
-		case AUDIO_MSG_ENQUEUE:
-			audvdbg("AUDIO_MSG_ENQUEUE\n");
-			break;
-
-		/* We will wake up from the I2S callback with this message */
-
-		case AUDIO_MSG_COMPLETE:
-			audvdbg("AUDIO_MSG_COMPLETE\n");
-			alc5658_returnbuffers(priv);
-			break;
-
-		default:
-			auddbg("ERROR: Ignoring message ID %d\n", msg.msgId);
-			break;
-		}
-	}
-
-	/* Reset the ALC5658 hardware */
-
-	alc5658_hw_reset(priv);
-
-	/* Return any pending buffers in our pending queue */
-
-	alc5658_takesem(&priv->pendsem);
-	while ((apb = (FAR struct ap_buffer_s *)dq_remfirst(&priv->pendq)) != NULL) {
-		/* Release our reference to the buffer */
-
-		apb_free(apb);
-
-		/* Send the buffer back up to the previous level. */
-
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-		priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_DEQUEUE, apb, OK, NULL);
-#else
-		priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_DEQUEUE, apb, OK);
-#endif
-	}
-
-	alc5658_givesem(&priv->pendsem);
-
-	/* Return any pending buffers in our done queue */
-
-	alc5658_returnbuffers(priv);
-
-	/* Close the message queue */
-
-	mq_close(priv->mq);
-	mq_unlink(priv->mqname);
-	priv->mq = NULL;
-
-	/* Send an AUDIO_MSG_COMPLETE message to the client */
-
-#ifdef CONFIG_AUDIO_MULTI_SESSION
-	priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_COMPLETE, NULL, OK, NULL);
-#else
-	priv->dev.upper(priv->dev.priv, AUDIO_CALLBACK_COMPLETE, NULL, OK);
-#endif
-
-	audvdbg("Exit\n");
-	return NULL;
-}
 
 /****************************************************************************
  * Name: alc5658_audio_output
@@ -1567,10 +1472,9 @@ static void *alc5658_workerthread(pthread_addr_t pvarg)
  *   None.  No failures are detected.
  *
  ****************************************************************************/
-
 static void alc5658_audio_output(FAR struct alc5658_dev_s *priv)
 {
-	alc5658_exec_i2c_script(priv, codec_init_script, sizeof(codec_init_script) / sizeof(t_codec_init_script_entry));
+	alc5658_exec_i2c_script(priv, codec_init_out_script, sizeof(codec_init_out_script) / sizeof(t_codec_init_script_entry));
 }
 
 /****************************************************************************
@@ -1586,9 +1490,9 @@ static void alc5658_audio_output(FAR struct alc5658_dev_s *priv)
  *   None.  No failures are detected.
  *
  ****************************************************************************/
-
 static void alc5658_audio_input(FAR struct alc5658_dev_s *priv)
 {
+	alc5658_exec_i2c_script(priv, codec_init_in_script, sizeof(codec_init_in_script) / sizeof(t_codec_init_script_entry));
 }
 
 /****************************************************************************
@@ -1604,10 +1508,10 @@ static void alc5658_audio_input(FAR struct alc5658_dev_s *priv)
  *   None
  *
  ****************************************************************************/
-
 #ifdef ALC5658_USE_FFLOCK_INT
 static void alc5658_configure_ints(FAR struct alc5658_dev_s *priv)
 {
+	/* Missing */
 }
 #endif
 
@@ -1624,9 +1528,12 @@ static void alc5658_configure_ints(FAR struct alc5658_dev_s *priv)
  *   None
  *
  ****************************************************************************/
-
 static void alc5658_hw_reset(FAR struct alc5658_dev_s *priv)
 {
+
+	if (!priv) {
+		return;
+	}
 
 	/* Put audio output back to its initial configuration */
 
@@ -1637,29 +1544,10 @@ static void alc5658_hw_reset(FAR struct alc5658_dev_s *priv)
 	priv->balance = b16HALF;	/* Center balance */
 #endif
 
-	/* Software reset.  This puts all ALC5658 registers back in their
-	 * default state.
-	 */
+	/* Software reset.  This puts all ALC5658 registers back in their default state  */
 
 	alc5658_exec_i2c_script(priv, codec_reset_script, sizeof(codec_reset_script) / sizeof(t_codec_init_script_entry));
-
-	alc5658_audio_output(priv);
-
-	/* Configure interrupts */
-
-	/* Configure the FLL and the LRCLK */
-
-	alc5658_setbitrate(priv);
-
-	/* Dump some information and return the device instance */
-
-	alc5658_dump_registers(&priv->dev, "After configuration");
-	alc5658_clock_analysis(&priv->dev, "After configuration");
 }
-
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
 
 /****************************************************************************
  * Name: alc5658_initialize
@@ -1677,7 +1565,6 @@ static void alc5658_hw_reset(FAR struct alc5658_dev_s *priv)
  *   success; NULL is returned on failure.
  *
  ****************************************************************************/
-
 FAR struct audio_lowerhalf_s *alc5658_initialize(FAR struct i2c_dev_s *i2c, FAR struct i2s_dev_s *i2s, FAR struct alc5658_lower_s *lower)
 {
 
@@ -1686,47 +1573,48 @@ FAR struct audio_lowerhalf_s *alc5658_initialize(FAR struct i2c_dev_s *i2c, FAR 
 	/* Sanity check */
 	DEBUGASSERT(i2c && i2s && lower);
 
+	auddbg("I2s dev addr is 0x%x\n", i2s);
+
 	/* Allocate a ALC5658 device structure */
 	priv = (FAR struct alc5658_dev_s *)kmm_zalloc(sizeof(struct alc5658_dev_s));
-	if (priv) {
-		/* Initialize the ALC5658 device structure.  Since we used kmm_zalloc,
-		 * only the non-zero elements of the structure need to be initialized.
-		 */
 
-		priv->dev.ops = &g_audioops;
-		priv->lower = lower;
-		priv->i2c = i2c;
-		priv->i2s = i2s;
-
-		sem_init(&priv->pendsem, 0, 1);
-		dq_init(&priv->pendq);
-		dq_init(&priv->doneq);
-
-		/* Software reset.  This puts all ALC5658 registers back in their
-		 * default state.
-		 */
-
-		alc5658_writereg(priv, ALC5658_RESET, 0);
-		alc5658_dump_registers(&priv->dev, "After reset");
-
-		/* Verify that ALC5658 is present and available on this I2C */
-
-		regval = alc5658_readreg(priv, ALC5658_RESET);
-		if (regval != 0) {
-			auddbg("ERROR: ALC5658 not found: ID=%04x\n", regval);
-			goto errout_with_dev;
-		}
-
-		/* Reset and reconfigure the ALC5658 hardwaqre */
-
-		alc5658_hw_reset(priv);
-		return &priv->dev;
+	if (!priv) {
+		return NULL;
 	}
 
-	return NULL;
+	/* Initialize the ALC5658 device structure.  Since we used kmm_zalloc,
+	 * only the non-zero elements of the structure need to be initialized.
+	 */
+	priv->dev.ops = &g_audioops;
+	priv->lower = lower;
+	priv->i2c = i2c;
+	priv->i2s = i2s;
+	priv->gain = ALC5658_GAIN_DEFAULT;
+	priv->volume = ALC5658_HP_VOL_DEFAULT;
+
+	sem_init(&priv->devsem, 0, 1);
+	sq_init(&priv->pendq);
+
+	/* Software reset.  This puts all ALC5658 registers back in their
+	 * default state.
+	 */
+	alc5658_writereg(priv, ALC5658_SW_RESET, 0);
+	alc5658_dump_registers(&priv->dev, "After reset");
+	/* Verify that ALC5658 is present and available on this I2C */
+	regval = alc5658_readreg(priv, ALC5658_SW_RESET);
+	if (regval != 0) {
+		auddbg("ERROR: ALC5658 not found: ID=%04x\n", regval);
+		goto errout_with_dev;
+	}
+
+	/* Reset and reconfigure the ALC5658 hardware */
+
+	alc5658_hw_reset(priv);
+
+	return &priv->dev;
 
 errout_with_dev:
-	sem_destroy(&priv->pendsem);
+	sem_destroy(&priv->devsem);
 	kmm_free(priv);
 	return NULL;
 }

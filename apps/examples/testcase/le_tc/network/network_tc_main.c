@@ -21,11 +21,20 @@
 /// @brief Main Function for Network TestCase Example
 #include <tinyara/config.h>
 #include <stdio.h>
-#include <semaphore.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <tinyara/os_api_test_drv.h>
+#include <tinyara/fs/fs.h>
+#include <tinyara/fs/ioctl.h>
+#include "tc_common.h"
 #include "tc_internal.h"
 
-extern sem_t tc_sem;
-extern int working_tc;
+static int g_tc_fd;
+
+int tc_get_fd(void)
+{
+	return g_tc_fd;
+}
 
 /****************************************************************************
  * Name: network_tc_main
@@ -33,19 +42,24 @@ extern int working_tc;
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
 #else
-int network_tc_main(int argc, char *argv[])
+int tc_network_main(int argc, char *argv[])
 #endif
 {
-	sem_wait(&tc_sem);
-	working_tc++;
+	if (testcase_state_handler(TC_START, "Network TC") == ERROR) {
+		return ERROR;
+	}
 
-	total_pass = 0;
-	total_fail = 0;
-
-	printf("=== TINYARA Network TC START! ===\n");
+	g_tc_fd = open(OS_API_TEST_DRVPATH, O_WRONLY);
+	if (g_tc_fd < 0) {
+		lldbg("Failed to open OS API test driver %d\n", errno);
+		return ERROR;
+	}
 
 #ifdef CONFIG_TC_NET_SOCKET
 	net_socket_main();
+#endif
+#ifdef CONFIG_TC_NET_PBUF
+	net_pbuf_main();
 #endif
 #ifdef CONFIG_TC_NET_SETSOCKOPT
 	net_setsockopt_main();
@@ -110,12 +124,40 @@ int network_tc_main(int argc, char *argv[])
 #ifdef CONFIG_TC_NET_NETDB
 	net_netdb_main();
 #endif
+#ifdef CONFIG_TC_NET_DUP
+	net_dup_main();
+#endif
+#ifdef CONFIG_ITC_NET_CLOSE
+	itc_net_close_main();
+#endif
+#ifdef CONFIG_ITC_NET_DUP
+	itc_net_dup_main();
+#endif
+#ifdef CONFIG_ITC_NET_FCNTL
+	itc_net_fcntl_main();
+#endif
+#ifdef CONFIG_ITC_NET_LISTEN
+	itc_net_listen_main();
+#endif
+#ifdef CONFIG_ITC_NET_SETSOCKOPT
+	itc_net_setsockopt_main();
+#endif
+#ifdef CONFIG_ITC_NET_SEND
+	itc_net_send_main();
+#endif
+#ifdef CONFIG_ITC_NET_INET
+	itc_net_inet_main();
+#endif
+#ifdef CONFIG_ITC_NET_NETDB
+	itc_net_netdb_main();
+#endif
+#ifdef CONFIG_ITC_NET_CONNECT
+	itc_net_connect_main();
+#endif
+	close(g_tc_fd);
+	g_tc_fd = -1;
 
-	printf("\n=== TINYARA Network TC COMPLETE ===\n");
-	printf("\t\tTotal pass : %d\n\t\tTotal fail : %d\n", total_pass, total_fail);
-
-	working_tc--;
-	sem_post(&tc_sem);
+	(void)testcase_state_handler(TC_END, "Network TC");
 
 	return 0;
 }

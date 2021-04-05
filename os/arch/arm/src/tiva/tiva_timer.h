@@ -154,8 +154,8 @@
 #define timdbg  lldbg
 #define timvdbg llvdbg
 #else
-#define timdbg(x...)
-#define timvdbg(x...)
+#define timdbg(...)
+#define timvdbg(...)
 #endif
 
 /****************************************************************************
@@ -170,10 +170,10 @@
  */
 
 enum tiva_timer32mode_e {
-	TIMER16_MODE = 0, 			/* Use 16-bit timers, not 32-bit timer */
-	TIMER32_MODE_ONESHOT, 		/* 32-bit programmable one-shot timer */
-	TIMER32_MODE_PERIODIC, 		/* 32-bit programmable periodic timer */
-	TIMER32_MODE_RTC			/* 32-bit RTC with external 32.768-KHz input */
+	TIMER16_MODE = 0,           /* Use 16-bit timers, not 32-bit timer */
+	TIMER32_MODE_ONESHOT,       /* 32-bit programmable one-shot timer */
+	TIMER32_MODE_PERIODIC,      /* 32-bit programmable periodic timer */
+	TIMER32_MODE_RTC            /* 32-bit RTC with external 32.768-KHz input */
 };
 
 /* This enumeration identifies all supported 16-bit timer A/B modes of
@@ -181,12 +181,12 @@ enum tiva_timer32mode_e {
  */
 
 enum tiva_timer16mode_e {
-	TIMER16_MODE_NONE = 0, 		/* 16-bit timer not used */
-	TIMER16_MODE_ONESHOT, 		/* 16-bit programmable one-shot timer */
-	TIMER16_MODE_PERIODIC, 		/* 16-bit programmable periodic timer */
-	TIMER16_MODE_COUNT_CAPTURE, 	/* 16-bit input edge-count capture mode w/8-bit prescaler */
-	TIMER16_MODE_TIME_CAPTURE, 	/* 16-bit input time capture mode w/8-bit prescaler */
-	TIMER16_MODE_PWM			/* 16-bit PWM output mode w/8-bit prescaler */
+	TIMER16_MODE_NONE = 0,      /* 16-bit timer not used */
+	TIMER16_MODE_ONESHOT,       /* 16-bit programmable one-shot timer */
+	TIMER16_MODE_PERIODIC,      /* 16-bit programmable periodic timer */
+	TIMER16_MODE_COUNT_CAPTURE, /* 16-bit input edge-count capture mode w/8-bit prescaler */
+	TIMER16_MODE_TIME_CAPTURE,  /* 16-bit input time capture mode w/8-bit prescaler */
+	TIMER16_MODE_PWM            /* 16-bit PWM output mode w/8-bit prescaler */
 };
 
 /* This type represents the opaque handler returned by tiva_gptm_configure() */
@@ -621,7 +621,7 @@ uint32_t tiva_timer32_remaining(TIMER_HANDLE handle);
  * Description:
  *   This function may be called at any time to change the timer interval
  *   match value of a 32-bit timer.  This function sets the match register
- *   the the absolute value specified.
+ *   the absolute value specified.
  *
  * Input Parameters:
  *   handle   - The handle value returned  by tiva_gptm_configure()
@@ -645,7 +645,7 @@ static inline void tiva_timer32_absmatch(TIMER_HANDLE handle, uint32_t absmatch)
  * Description:
  *   This function may be called at any time to change the timer interval
  *   match value of a 16-bit timer.  This function sets the match register
- *   the the absolute value specified.
+ *   the absolute value specified.
  *
  * Input Parameters:
  *   handle   - The handle value returned  by tiva_gptm_configure()

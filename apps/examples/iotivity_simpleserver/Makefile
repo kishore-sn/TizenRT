@@ -57,7 +57,7 @@ include $(APPDIR)/Make.defs
 # built-in application info
 
 APPNAME = simpleServer
-FUNCNAME = simpleServer_main
+FUNCNAME = $(APPNAME)_main
 THREADEXEC = TASH_EXECMD_SYNC
 
 # iotivitySimServ example
@@ -73,7 +73,6 @@ CFLAGS += -I$(IOTIVITY_BASE_DIR)/resource/csdk/connectivity/common/inc
 CFLAGS += -I$(IOTIVITY_BASE_DIR)/resource/csdk/logger/include
 CFLAGS += -I$(IOTIVITY_BASE_DIR)/resource/csdk/security/include
 CFLAGS += -I$(IOTIVITY_BASE_DIR)/resource/csdk/stack/include
-CFLAGS += -I$(IOTIVITY_BASE_DIR)/extlibs/mbedtls/mbedtls/include
 
 CFLAGS += -DWITH_POSIX -DIP_ADAPTER
 CFLAGS += -DWITH_BWT
@@ -82,15 +81,18 @@ CFLAGS += -DROUTING_EP
 else
 CFLAGS += -DROUTING_GW
 endif
-CFLAGS += -D__TINYARA__
+CFLAGS += -D__TINYARA__ -D__TIZENRT__
 CFLAGS += -std=c99
 CFLAGS += -w
+
+ifeq ($(CONFIG_ENABLE_IOTIVITY_SECURED),y)
 CFLAGS += -D__WITH_DTLS__
+endif
 
 ifeq ($(CONFIG_EXAMPLES_IOTIVITY),y)
-CSRCS += port_tinyara.c
+CSRCS += port_tinyara.c port_logger.c
 else
-CSRCS += port_tinyara.c
+CSRCS += port_tinyara.c port_logger.c
 endif
 
 MAINSRC = simpleServer.c
@@ -159,10 +161,10 @@ install:
 endif
 
 ifeq ($(CONFIG_BUILTIN_APPS)$(CONFIG_EXAMPLES_IOTIVITY),yy)
-$(BUILTIN_REGISTRY)$(DELIM)$(APPNAME)_main.bdat: $(DEPCONFIG) Makefile
-	$(Q) $(call REGISTER,$(APPNAME),$(APPNAME)_main,$(THREADEXEC),$(PRIORITY),$(STACKSIZE))
+$(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat: $(DEPCONFIG) Makefile
+	$(Q) $(call REGISTER,$(APPNAME),$(FUNCNAME),$(THREADEXEC),$(PRIORITY),$(STACKSIZE))
 
-context: $(BUILTIN_REGISTRY)$(DELIM)$(APPNAME)_main.bdat
+context: $(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat
 
 else
 context:

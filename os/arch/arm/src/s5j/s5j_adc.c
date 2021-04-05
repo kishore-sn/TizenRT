@@ -55,6 +55,7 @@
 #include <tinyara/config.h>
 
 #include <sys/types.h>
+#include <string.h>
 #include <assert.h>
 #include <debug.h>
 #include <errno.h>
@@ -336,7 +337,7 @@ static int adc_setup(FAR struct adc_dev_s *dev)
 	 * Enable the ADC interrupt, but it will not be generated until we
 	 * request to start the conversion.
 	 */
-	lldbg("Enable the ADC interrupt: irq=%d\n", IRQ_ADC);
+	llwdbg("Enable the ADC interrupt: irq=%d\n", IRQ_ADC);
 	up_enable_irq(IRQ_ADC);
 
 	return OK;

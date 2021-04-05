@@ -78,12 +78,8 @@
  * CONFIG_ALC5658_INITVOLUME - The initial volume level in the range {0..1000}
  * CONFIG_ALC5658_INFLIGHT - Maximum number of buffers that the ALC5658 driver
  *   will send to the I2S driver before any have completed.
- * CONFIG_ALC5658_MSG_PRIO - Priority of messages sent to the ALC5658 worker
- *   thread.
  * CONFIG_ALC5658_BUFFER_SIZE - Preferred buffer size
  * CONFIG_ALC5658_NUM_BUFFERS - Preferred number of buffers
- * CONFIG_ALC5658_WORKER_STACKSIZE - Stack size to use when creating the the
- *   ALC5658 worker thread.
  * CONFIG_ALC5658_REGDUMP - Enable logic to dump all ALC5658 registers to
  *   the SYSLOG device.
  */
@@ -120,29 +116,21 @@
 #error CONFIG_ALC5658_INFLIGHT must fit in a uint8_t
 #endif
 
-#ifndef CONFIG_ALC5658_MSG_PRIO
-#define CONFIG_ALC5658_MSG_PRIO          1
-#endif
-
 #ifndef CONFIG_ALC5658_BUFFER_SIZE
-#define CONFIG_ALC5658_BUFFER_SIZE       8192
+#define CONFIG_ALC5658_BUFFER_SIZE       2048
 #endif
 
 #ifndef CONFIG_ALC5658_NUM_BUFFERS
 #define CONFIG_ALC5658_NUM_BUFFERS       4
 #endif
 
-#ifndef CONFIG_ALC5658_WORKER_STACKSIZE
-#define CONFIG_ALC5658_WORKER_STACKSIZE  768
-#endif
-
 /* Helper macros ************************************************************/
 
-#define ALC5658_ATTACH(s,isr,arg) ((s)->attach(s,isr,arg))
-#define ALC5658_DETACH(s)         ((s)->attach(s,NULL,NULL))
-#define ALC5658_ENABLE(s)         ((s)->enable(s,true))
-#define ALC5658_DISABLE(s)        ((s)->enable(s,false))
-#define ALC5658_RESTORE(s,e)      ((s)->enable(s,e))
+#define ALC5658_ATTACH(s, isr, arg) ((s)->attach(s, isr, arg))
+#define ALC5658_DETACH(s)         ((s)->attach(s, NULL, NULL))
+#define ALC5658_ENABLE(s)         ((s)->enable(s, true))
+#define ALC5658_DISABLE(s)        ((s)->enable(s, false))
+#define ALC5658_RESTORE(s, e)      ((s)->enable(s, e))
 
 /****************************************************************************
  * Public Types
@@ -248,7 +236,7 @@ void alc5658_dump_registers(FAR struct audio_lowerhalf_s *dev, FAR const char *m
  * including file.
  */
 
-#define alc5658_dump_registers(d,m)
+#define alc5658_dump_registers(d, m)
 #endif
 
 /****************************************************************************
@@ -272,7 +260,7 @@ void alc5658_clock_analysis(FAR struct audio_lowerhalf_s *dev, FAR const char *m
  * including file.
  */
 
-#define alc5658_clock_analysis(d,m)
+#define alc5658_clock_analysis(d, m)
 #endif
 
 #undef EXTERN

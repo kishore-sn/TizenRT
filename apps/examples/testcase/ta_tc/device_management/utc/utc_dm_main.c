@@ -22,57 +22,42 @@
 #include <tinyara/config.h>
 #include <stdio.h>
 #include <semaphore.h>
-#include "utc_internal.h"
 
 #include <dm/dm_error.h>
 #include <dm/dm_connectivity.h>
+#include <protocols/dhcpc.h>
+#include <tinyara/wifi/slsi/slsi_wifi_api.h>
 
-#include <apps/netutils/dhcpc.h>
-#include <apps/netutils/wifi/slsi_wifi_api.h>
+#include "tc_common.h"
+#include "utc_internal.h"
 
+#ifdef CONFIG_WIFI_MANAGER
+#define NET_DEVNAME	CONFIG_WIFIMGR_STA_IFNAME
+#else
 #define NET_DEVNAME "wl1"
-
-int total_pass = 0;
-int total_fail = 0;
-
-extern sem_t tc_sem;
-extern int working_tc;
+#endif
 
 static int isConnected = 0;
 
 static int app_dhcp_main(void)
 {
-	uint32_t timeleft = 15000;
-	struct dhcpc_state state;
-	void *dhcp_handle;
 	int ret;
+	struct in_addr ip_check;
 
-	dhcp_handle = dhcpc_open(NET_DEVNAME);
-	ret = dhcpc_request(dhcp_handle, &state);
-	while (ret != OK) {
-		usleep(10);
-		//sys_msleep(10);
-		timeleft -= 10;
-
-		if (timeleft <= 0) {
-			break;
-		}
-	}
-
-	if (timeleft <= 0) {
-		dhcpc_close(dhcp_handle);
+	ret = dhcp_client_start(NET_DEVNAME);
+	if (ret != OK) {
 		return -1;
 	}
 
-	netlib_set_ipv4addr(NET_DEVNAME, &state.ipaddr);
-	netlib_set_ipv4netmask(NET_DEVNAME, &state.netmask);
-	netlib_set_dripv4addr(NET_DEVNAME, &state.default_router);
-
-	printf("IP address : %s ----\n", inet_ntoa(state.ipaddr));
+	ret = netlib_get_ipv4addr(NET_DEVNAME, &ip_check)
+	if (ret != OK) {
+		return -1;
+	}
+	printf("IP address get %s ----\n", inet_ntoa(ip_check));
 	return 1;
 }
 
-void linkUpEvent(void)
+static void linkUpEvent(void)
 {
 	isConnected = 1;
 }
@@ -86,8 +71,7 @@ int wifiAutoConnectInit(void)
 	dm_conn_register_linkup_cb(linkUpEvent);
 
 	if (WiFiIsConnected(&result, NULL) != SLSI_STATUS_SUCCESS) {
-		printf("failed to WifiIsConnected\n");
-		return -1;
+		printf("Wifi Is not Connected\n");
 	}
 
 	if (result > 0) {
@@ -157,14 +141,15 @@ int main(int argc, FAR char *argv[])
 int utc_dm_main(int argc, char *argv[])
 #endif
 {
-	sem_wait(&tc_sem);
-	working_tc++;
+	if (testcase_state_handler(TC_START, "DeviceManagement UTC") == ERROR) {
+		return ERROR;
+	}
+
 #ifndef CONFIG_DM_WIFI
 	printf("=== Please Setup WiFi Info ===\n");
 	return 0;
 #endif
 	if (wifiAutoConnect() == 1) {
-		printf("=== TINYARA DM TC START! ===\n");
 		dm_lwm2m_testcase_main();
 #ifdef CONFIG_UTC_DM_CONN_GET_RSSI
 		dm_conn_get_rssi_main();
@@ -196,14 +181,10 @@ int utc_dm_main(int argc, char *argv[])
 #ifdef CONFIG_UTC_DM_CONN_UNREGI_LINKDOWN
 		dm_conn_unregi_linkdown_main();
 #endif
-
-		printf("\n=== TINYARA DM TC COMPLETE ===\n");
-		printf("\t\tTotal pass : %d\n\t\tTotal fail : %d\n", total_pass, total_fail);
-
 		wifiAutoConnectDeInit();
 	}
-	working_tc--;
-	sem_post(&tc_sem);
+
+	(void)testcase_state_handler(TC_END, "DeviceManagement UTC");
 
 	return 0;
 }

@@ -130,6 +130,7 @@
  *   and return immediately.
  *
  *   ioctl argument:  None
+ *
  */
 
 #define PWMIOC_SETCHARACTERISTICS _PWMIOC(1)
@@ -162,12 +163,14 @@ struct pwm_info_s {
 
 #else
 	ub16_t duty;				/* Duty of the pulse train, "1"-to-"0" duration.
-								 * Maximum: 65535/65536 (0x0000ffff)
-								 * Minimum:     1/65536 (0x00000001) */
+								 * Maximum value is (b16ONE - 1). (PWM makes always high)
+								 * Minimum value is 0. (PWM makes always low)
+								 * pulse width (duty cycle) 50% is b16HALF. (PWM repeats half high, half low) */
 #ifdef CONFIG_PWM_PULSECOUNT
 	uint32_t count;				/* The number of pulse to generate.  0 means to
 								 * generate an indefinite number of pulses */
 #endif
+	ub8_t idle;
 #endif							/* CONFIG_PWM_MULTICHAN */
 };
 

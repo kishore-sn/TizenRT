@@ -74,12 +74,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* The number of functions that may be registered to be called
- * at program exit.
- */
-
-#define ATEXIT_MAX 1
-
 /* Values for seeking */
 
 #define SEEK_SET    0			/* From the start of the file */
@@ -157,6 +151,8 @@ EXTERN int optopt;				/* unrecognized option character */
 /* Task Control Interfaces */
 
 /**
+ * @cond
+ * @internal
  * @ingroup UNISTD_KERNEL
  * @brief The vfork() function has the same effect as fork(), except that the behavior is
  *   undefined if the process created by vfork() either modifies any data other than
@@ -164,7 +160,8 @@ EXTERN int optopt;				/* unrecognized option character */
  *   from the function in which vfork() was called, or calls any other function before
  *   successfully calling _exit() or one of the exec family of functions.
  *
- * @details This thin layer implements vfork by simply calling up_vfork() with the vfork()
+ * @details @b #include <unistd.h> \n
+ * This thin layer implements vfork by simply calling up_vfork() with the vfork()
  *   context as an argument.  The overall sequence is:
  *
  *   1) User code calls vfork().  vfork() collects context information and
@@ -188,15 +185,30 @@ EXTERN int optopt;				/* unrecognized option character */
  *   the process ID of the child process to the parent process. Otherwise, -1 is
  *   returned to the parent, no child process is created, and errno is set to
  *   indicate the error.
- * @since Tizen RT v1.0
+ * @since TizenRT v1.0
  */
 pid_t vfork(void);
 /**
+ * @endcond
+ */
+/**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief get the process ID
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 pid_t getpid(void);
+
+/* Check if a file descriptor corresponds to a terminal I/O file */
+/**
+ * @ingroup UNISTD_KERNEL
+ * @brief test for a terminal device
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v2.1 PRE
+ */
+int isatty(int fd);
 /**
  * @cond
  * @internal
@@ -207,20 +219,30 @@ void _exit(int status) noreturn_function;
  */
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief suspend execution for an interval of time
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 unsigned int sleep(unsigned int seconds);
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief suspend execution for microsecond intervals
+ * @details @b #include <unistd.h> \n
+ * The usleep() function suspends execution of the calling thread for
+ * (at least) usec microseconds.  The sleep may be lengthened slightly
+ * by any system activity or by the time spent processing the call or by
+ * the granularity of system timers.
+ * @param[in] usec microsecond intervals
+ * @since TizenRT v1.0
  */
 int usleep(useconds_t usec);
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief suspend the thread until a signal is received
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int pause(void);
 
@@ -231,59 +253,85 @@ int pause(void);
  * @{
  */
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief close a file descriptor
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int close(int fd);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief duplicate an open file descriptor
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int dup(int fd);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief duplicate an open file descriptor
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int dup2(int fd1, int fd2);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief synchronize changes to a file
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int fsync(int fd);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief move the read/write file offset
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 off_t lseek(int fd, off_t offset, int whence);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief read from a file
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 ssize_t read(int fd, FAR void *buf, size_t nbytes);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief write to another user
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 ssize_t write(int fd, FAR const void *buf, size_t nbytes);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief read from a file
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 ssize_t pread(int fd, FAR void *buf, size_t nbytes, off_t offset);
 /**
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief write on a file
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 ssize_t pwrite(int fd, FAR const void *buf, size_t nbytes, off_t offset);
+/**
+ * @brief adjust size of file
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v3.1 PRE
+ */
+int ftruncate(int fd, off_t length);
 
 /**
  * @}
@@ -306,9 +354,11 @@ FAR void *sbrk(intptr_t incr);
 
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief create an interprocess channel
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int pipe(int fd[2]);
 
@@ -316,36 +366,46 @@ int pipe(int fd[2]);
 
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief change working directory
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int chdir(FAR const char *path);
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief get the pathname of the current working directory
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 FAR char *getcwd(FAR char *buf, size_t size);
 
 /* File path operations */
 /**
  * @ingroup STDLIB_LIBC
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v2.0
+ * @brief determine accessibility of a file descriptor
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.1
  */
 int access(FAR const char *path, int amode);
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief remove a directory
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int rmdir(FAR const char *pathname);
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief call the unlink function
+ * @details @b #include <unistd.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int unlink(FAR const char *pathname);
 
@@ -364,11 +424,23 @@ int execv(FAR const char *path, FAR char *const argv[]);
  * @} */
 #endif
 
-/* Other */
+/* Byte operations */
+/**
+ * @cond
+ * @internal
+ */
+void swab(FAR const void *src, FAR void *dest, ssize_t nbytes);
+/**
+ * @endcond
+ */
+
+/* getopt and friends */
 /**
  * @ingroup UNISTD_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @since Tizen RT v1.0
+ * @brief command option parsing
+ * @details @b #include <unistd.h> \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 int getopt(int argc, FAR char *const argv[], FAR const char *optstring);
 
@@ -392,7 +464,7 @@ int *getoptoptp(void);			/* unrecognized option character */
 }
 #endif
 
-#endif							/* __INCLUDE_UNISTD_H */
+#endif					/* __INCLUDE_UNISTD_H */
 /**
  * @}
  */

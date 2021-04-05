@@ -18,9 +18,6 @@
 /****************************************************************************
  * examples/websocket/websocket_main.c
  *
- *   Copyright (C) 2016 SAMSUNG ELECTRONICS CO., LTD. All rights reserved.
- *   Author: Jisuu Kim <jisuu.kim@samsung.com>
- *
  *   Copyright (C) 2008, 2011-2012 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
@@ -66,7 +63,7 @@
 * @scenario		1. Start websocket server at TASH using the command "websocket server 0"
 *			2. Start websocket client at TASH using the command "websocket client [serverip] 80 \ 0 128 10".
 * @apicovered
-* @precondition		Connect to Wi-Fi. Both ARTIK051 server and ARTIK051 client should be in the same network.
+* @precondition		Connect to Wi-Fi. Both ARTIK05x server and ARTIK05x client should be in the same network.
 * @postcondition
 */
 
@@ -74,7 +71,7 @@
 * @testcase		websocket_wss_01
 * @brief		To run websocket example with TLS enabled. Test packet size and number can be modified as parameters.
 *			parameters:
-*			serverip: ARTIK051 websocket server IP address
+*			serverip: ARTIK05x websocket server IP address
 *			443: port number. Web Secure Socket(WSS) uses 443 port.
 *			NULL: URI address. Websocket doesn't have regulation for URI.
 *			0: TLS disabled
@@ -83,7 +80,7 @@
 * @scenario		1. Start websocket server at TASH using the command "websocket server 1"
 *			2. Start websocket client at TASH using the command "websocket client [serverip] 443 \ 1 128 10".
 * @apicovered
-* @precondition		Connect to Wi-Fi. Both ARTIK051 server and ARTIK051 client should be in the same network.
+* @precondition		Connect to Wi-Fi. Both ARTIK05x server and ARTIK05x client should be in the same network.
 * @postcondition
 */
 
@@ -93,7 +90,7 @@
 * @scenario		1. Start webserver at TASH using the command "webserver start".  Refer to webserver_main.c to run HTTP server.
 *			2. Start websocket client at TASH using this command "websocket client [serverip] 80 \ 0 128 10".
 * @apicovered
-* @precondition		Connect to Wi-Fi. Both ARTIK051 server and ARTIK051 client should be in the same network.
+* @precondition		Connect to Wi-Fi. Both ARTIK05x server and ARTIK05x client should be in the same network.
 * @postcondition
 */
 
@@ -103,7 +100,7 @@
 * @scenario		1. Start webserver at TASH using the command "webserver start".  Refer to webserver_main.c to run HTTP server.
 *			2. Start websocket client at TASH using this command "websocket client [serverip] 443 \ 1 128 10".
 * @apicovered
-* @precondition		Connect to Wi-Fi. Both ARTIK051 server and ARTIK051 client should be in the same network.
+* @precondition		Connect to Wi-Fi. Both ARTIK05x server and ARTIK05x client should be in the same network.
 * @postcondition
 */
 
@@ -112,33 +109,36 @@
  ****************************************************************************/
 
 #include <tinyara/config.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <pthread.h>
 
-#include <apps/netutils/websocket.h>
+#include <protocols/websocket.h>
 
-#include <tls/config.h>
-#include <tls/entropy.h>
-#include <tls/ctr_drbg.h>
-#include <tls/certs.h>
-#include <tls/x509.h>
-#include <tls/ssl.h>
-#include <tls/net.h>
-#include <tls/error.h>
-#include <tls/debug.h>
-#include <tls/ssl_cache.h>
-
-#include <sys/socket.h>
+#include "mbedtls/config.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/certs.h"
+#include "mbedtls/x509.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/net.h"
+#include "mbedtls/error.h"
+#include "mbedtls/debug.h"
+#include "mbedtls/ssl_cache.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
 #define WEBSOCKET_EXAMPLE_STACKSIZE (1024 * 10)
-
-/* 
+#define WEBSOCKET_EXAMPLE_PORT_LEN 7
+#define WEBSOCKET_EXAMPLE_ADDR_LEN 19
+#define WEBSOCKET_EXAMPLE_PATH_LEN 31
+/*
  * TLS debug configure (0 ~ 5)
  *
  * This configuration is good to debug TLS handshake state. But, more than
@@ -166,6 +166,16 @@
 	"   $ websocket server 1\n"								\
 	"   $ websocket client 127.0.0.1 443 0 1 100 10\n"
 
+struct options_s {
+	int mode;
+	int tls_mode;
+	char server_port[WEBSOCKET_EXAMPLE_PORT_LEN + 1];
+	char server_ip[WEBSOCKET_EXAMPLE_ADDR_LEN + 1];
+	char path[WEBSOCKET_EXAMPLE_PATH_LEN + 1];
+	int size;
+	int num;
+};
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -183,7 +193,13 @@ static void websocket_tls_debug(void *ctx, int level, const char *file, int line
 	printf("%s:%04d: %s", file, line, str);
 }
 
-websocket_return_t websocket_tls_init(websocket_t *data, mbedtls_ssl_config *conf, mbedtls_x509_crt *cert, mbedtls_pk_context *pkey, mbedtls_entropy_context *entropy, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_ssl_cache_context *cache)
+websocket_return_t websocket_tls_init(websocket_t *data,
+									  mbedtls_ssl_config *conf,
+									  mbedtls_x509_crt *cert,
+									  mbedtls_pk_context *pkey,
+									  mbedtls_entropy_context *entropy,
+									  mbedtls_ctr_drbg_context *ctr_drbg,
+									  mbedtls_ssl_cache_context *cache)
 {
 	int r;
 	const char *crt = mbedtls_test_srv_crt;
@@ -248,6 +264,8 @@ websocket_return_t websocket_tls_init(websocket_t *data, mbedtls_ssl_config *con
 		return WEBSOCKET_INIT_ERROR;
 	}
 
+	/* ToDo: to access web browser it should be a ssl_verify none mode*/
+	mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_NONE);
 	mbedtls_ssl_conf_rng(conf, mbedtls_ctr_drbg_random, ctr_drbg);
 	mbedtls_ssl_conf_dbg(conf, websocket_tls_debug, stdout);
 	if (data->state == WEBSOCKET_RUN_SERVER) {
@@ -429,13 +447,13 @@ int websocket_client(void *arg)
 {
 	int i;
 	int r = WEBSOCKET_SUCCESS;
-	char **argv = arg;
+	struct options_s *opt = arg;
 	char *addr = NULL;
 	char *port = NULL;
 	char *path = NULL;
-	int tls = atoi(argv[3]);
-	int size = atoi(argv[4]);
-	int send_cnt = atoi(argv[5]);
+	int tls = opt->tls_mode;
+	int size = opt->size;
+	int send_cnt = opt->num;
 	websocket_frame_t *tx_frame = NULL;
 	websocket_t *websocket_cli = NULL;
 	char *test_message = NULL;
@@ -473,17 +491,17 @@ int websocket_client(void *arg)
 		return -1;
 	}
 
-	addr = calloc(1, (strlen(argv[0]) + 1));
-	port = calloc(1, (strlen(argv[1]) + 1));
-	path = calloc(1, (strlen(argv[2]) + 1));
+	addr = calloc(1, (strlen(opt->server_ip) + 1));
+	port = calloc(1, (strlen(opt->server_port) + 1));
+	path = calloc(1, (strlen(opt->path) + 1));
 	if (addr == NULL || port == NULL || path == NULL) {
 		printf("fail to allocate memory\n");
 		goto WEB_CLI_EXIT;
 	}
 
-	strncpy(addr, argv[0], strlen(argv[0]));
-	strncpy(port, argv[1], strlen(argv[1]));
-	strncpy(path, argv[2], strlen(argv[2]));
+	strncpy(addr, opt->server_ip, strlen(opt->server_ip));
+	strncpy(port, opt->server_port, strlen(opt->server_port));
+	strncpy(path, opt->path, strlen(opt->path));
 
 	received_cnt = 0;
 	websocket_cli = calloc(1, sizeof(websocket_t));
@@ -585,7 +603,7 @@ WEB_CLI_EXIT:
 
 	if (tls) {
 		websocket_tls_release(1, &conf, &cert, &pkey, &entropy, &ctr_drbg, &cache);
-		if (websocket_cli->tls_ssl) {
+		if (websocket_cli && websocket_cli->tls_ssl) {
 			mbedtls_ssl_free(websocket_cli->tls_ssl);
 			free(websocket_cli->tls_ssl);
 		}
@@ -616,8 +634,8 @@ WEB_CLI_EXIT:
 int websocket_server(void *arg)
 {
 	int r;
-	char **argv = arg;
-	int tls = atoi(argv[0]);
+	struct options_s *opt = arg;
+	int tls = opt->tls_mode;
 	static websocket_cb_t cb = {
 		recv_cb,				/* recv callback */
 		send_cb,				/* send callback */
@@ -702,31 +720,86 @@ int websocket_main(int argc, char *argv[])
 	int status;
 	pthread_attr_t attr;
 	pthread_t tid;
+	struct options_s *input = NULL;
+	if (argc < 3) {
+		goto error_with_input;
+	}
+
+	/* Parsing input parameters*/
+	input = (struct options_s *)malloc(sizeof(struct options_s));
+	if (!input) {
+		printf("memory alloc error\n");
+		return -1;
+	}
+	memset(input->server_ip, 0, 20);
+	memset(input->path, 0, 32);
+
+	if (strncmp(argv[1], "server", strlen("server") + 1) == 0) {
+		if (argc != 3) {
+			goto error_with_input;
+		}
+		input->tls_mode = atoi(argv[2]);
+	} else if (strncmp(argv[1], "client", strlen("client") + 1) == 0) {
+		if (argc != 8) {
+			goto error_with_input;
+		}
+
+		int addr_len = strlen(argv[2]);
+		int port_len = strlen(argv[3]);
+		int path_len = strlen(argv[4]);
+
+		if (addr_len > WEBSOCKET_EXAMPLE_ADDR_LEN || port_len > WEBSOCKET_EXAMPLE_PORT_LEN
+			|| path_len > WEBSOCKET_EXAMPLE_PATH_LEN) {
+			goto error_with_input;
+		}
+		strncpy(input->server_ip, argv[2], addr_len + 1);
+		strncpy(input->server_port, argv[3], port_len + 1);
+		strncpy(input->path, argv[4], path_len + 1);
+
+		input->tls_mode = atoi(argv[5]);
+		input->size = atoi(argv[6]);
+		input->num = atoi(argv[7]);
+	} else {
+		goto error_with_input;
+	}
 
 	if ((status = pthread_attr_init(&attr)) != 0) {
 		printf("fail to init thread\n");
-		return -1;
+		goto error_with_function_failure;
 	}
+
 	pthread_attr_setstacksize(&attr, WEBSOCKET_EXAMPLE_STACKSIZE);
 	pthread_attr_setschedpolicy(&attr, WEBSOCKET_SCHED_POLICY);
 
 	if (memcmp(argv[1], "client", strlen("client")) == 0 && argc == 8) {
-		if ((status = pthread_create(&tid, &attr, (pthread_startroutine_t)websocket_client, (void *)(argv + 2))) != 0) {
+		if ((status = pthread_create(&tid, &attr, (pthread_startroutine_t)websocket_client, (void *)input)) != 0) {
 			printf("fail to create thread\n");
-			return -1;
+			goto error_with_function_failure;
 		}
 		pthread_setname_np(tid, "websocket client");
-		pthread_detach(tid);
+		pthread_join(tid, NULL);
 	} else if (memcmp(argv[1], "server", strlen("server")) == 0 && argc == 3) {
-		if ((status = pthread_create(&tid, &attr, (pthread_startroutine_t)websocket_server, (void *)(argv + 2))) != 0) {
+		if ((status = pthread_create(&tid, &attr, (pthread_startroutine_t)websocket_server, (void *)input)) != 0) {
 			printf("fail to create thread\n");
-			return -1;
+			goto error_with_function_failure;
 		}
 		pthread_setname_np(tid, "websocket server");
-		pthread_detach(tid);
+		pthread_join(tid, NULL);
 	} else {
 		printf("\nwrong input parameter !!!\n %s\n", WEBSOCKET_USAGE);
-		return -1;
+		goto error_with_function_failure;
 	}
+
+	/* Release the allocated memory */
+	free(input);
+
 	return 0;
+
+error_with_input:
+	printf("%s", WEBSOCKET_USAGE);
+error_with_function_failure:
+	if (input) {
+		free(input);
+	}
+	return -1;
 }

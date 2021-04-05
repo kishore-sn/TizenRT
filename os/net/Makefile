@@ -58,12 +58,16 @@ ifeq ($(CONFIG_NET),y)
 # Basic networking support
 
 NET_ASRCS   =
+ifeq ($(CONFIG_NET_NETMGR),y)
+NET_CSRCS   = net_initialize_netmgr.c
+else
 NET_CSRCS   = net_initialize.c
+endif
 
 #LWIP stack support
 
 LWIP_ASRCS   =
-LWIP_CSRCS   = 
+LWIP_CSRCS   =
 
 # Socket support
 
@@ -75,23 +79,27 @@ SOCK_CSRCS  =
 NETDEV_ASRCS =
 NETDEV_CSRCS =
 
-#tls support
-
-ifeq ($(CONFIG_NET_SECURITY_TLS),y)
-TLS_ASRCS = 
-TLS_CSRCS =
-endif
+BLUETOOTH_ASRCS =
+BLUETOOTH_CSRCS =
 
 VPATH =
 DEPPATH = --dep-path .
 
+ifeq ($(CONFIG_NET_NETMGR),y)
+include netmgr/Make.defs
+else
 include netdev/Make.defs
 include mac/Make.defs
 include socket/Make.defs
+endif
+
+ifeq ($(CONFIG_BLUETOOTH),y)
+include bluetooth/Make.defs
+include bluetooth/iob/Make.defs
+endif
 #LWIP Support
 
 ifeq ($(CONFIG_NET_LWIP),y)
-
 include lwip/src/core/Make.defs
 include lwip/src/api/Make.defs
 include lwip/src/netif/Make.defs
@@ -99,24 +107,25 @@ include lwip/src/core/snmp/Make.defs
 ifeq ($(CONFIG_NET_IPv4),y)
 include lwip/src/core/ipv4/Make.defs
 endif
-#include lwip/src/core/ipv6/Make.defs
+ifeq ($(CONFIG_NET_IPv6),y)
+include lwip/src/core/ipv6/Make.defs
+endif
 include lwip/src/netif/ppp/Make.defs
 include lwip/sys/arch/Make.defs
 endif
 
-include route/Make.defs
+endif
+
+ifeq ($(CONFIG_NET_LOCAL),y)
+include local/Make.defs
 include utils/Make.defs
-
-ifeq ($(CONFIG_NET_SECURITY_TLS),y)
-include tls/Make.defs
 endif
 
-endif
 
-ASRCS		= $(SOCK_ASRCS) $(NETDEV_ASRCS) $(NET_ASRCS) $(TLS_ASRCS) $(LWIP_ASRCS)
+ASRCS		= $(SOCK_ASRCS) $(NETDEV_ASRCS) $(NET_ASRCS) $(TLS_ASRCS) $(LWIP_ASRCS) $(BLUETOOTH_ASRCS)
 AOBJS		= $(ASRCS:.S=$(OBJEXT))
 
-CSRCS		= $(SOCK_CSRCS) $(NETDEV_CSRCS) $(NET_CSRCS) $(TLS_CSRCS) $(LWIP_CSRCS)
+CSRCS		= $(SOCK_CSRCS) $(NETDEV_CSRCS) $(NET_CSRCS) $(TLS_CSRCS) $(LWIP_CSRCS) $(BLUETOOTH_CSRCS)
 COBJS		= $(CSRCS:.c=$(OBJEXT))
 
 SRCS		= $(ASRCS) $(CSRCS)

@@ -61,6 +61,8 @@ endif
 # VI-Workalike Editor
 
 APPNAME = vi
+FUNCNAME = vi_main
+THREADEXEC = TASH_EXECMD_SYNC
 
 ASRCS =
 CSRCS =
@@ -128,7 +130,16 @@ install:
 
 endif
 
+ifeq ($(CONFIG_BUILTIN_APPS)$(CONFIG_SYSTEM_VI),yy)
+$(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat: $(DEPCONFIG) Makefile
+	$(Q) $(call REGISTER,$(APPNAME),$(FUNCNAME),$(THREADEXEC))
+
+context: $(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat
+
+else
 context:
+
+endif
 
 # Create dependencies
 

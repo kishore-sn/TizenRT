@@ -143,8 +143,8 @@
 #define i2cdbg dbg
 #define i2cvdbg vdbg
 #else
-#define i2cdbg(x...)
-#define i2cvdbg(x...)
+#define i2cdbg(...)
+#define i2cvdbg(...)
 #endif
 
 #ifndef CONFIG_DEBUG
@@ -1076,7 +1076,7 @@ static void tiva_i2c_startxfr(struct tiva_i2c_priv_s *priv)
 
 	/* Set the Master Slave Address */
 
-	regval = (uint32_t) msg->addr << I2CM_SA_SA_SHIFT;
+	regval = (uint32_t)msg->addr << I2CM_SA_SA_SHIFT;
 	if ((msg->flags & I2C_M_READ) != 0) {
 		regval |= I2CM_SA_RS;
 	}
@@ -1159,7 +1159,7 @@ static void tiva_i2c_nextxfr(struct tiva_i2c_priv_s *priv, uint32_t cmd)
 
 		/* We are sending data.  Write the data to be sent to the DR register. */
 
-		dr = (uint32_t) * priv->mptr++;
+		dr = (uint32_t)*priv->mptr++;
 		tiva_i2c_putreg(priv, TIVA_I2CM_DR_OFFSET, dr << I2CM_DR_SHIFT);
 
 		/* Write the command to the control register to send the byte in the DR
@@ -1284,7 +1284,7 @@ static int tiva_i2c_interrupt(struct tiva_i2c_priv_s *priv, uint32_t status)
 						 * the user buffer
 						 */
 
-						*priv->mptr++ = (uint8_t) dr;
+						*priv->mptr++ = (uint8_t)dr;
 					}
 
 					/* Decrement the count of bytes remaining to be sent */
@@ -1316,7 +1316,7 @@ static int tiva_i2c_interrupt(struct tiva_i2c_priv_s *priv, uint32_t status)
 						if ((priv->msgv->flags & I2C_M_NORESTART) != 0) {
 							/* Just continue transferring data.  In this case,
 							 * no STOP was sent at the end of the last message
-							 * and the there is no new address.
+							 * and there is no new address.
 							 *
 							 * REVISIT: In this case, the address or the
 							 * direction of the transfer cannot be permitted to
@@ -1710,7 +1710,7 @@ static int tiva_i2c_initialize(struct tiva_i2c_priv_s *priv, uint32_t frequency)
 #endif
 #endif
 
-	/* Configure the the initial I2C clock frequency. */
+	/* Configure the initial I2C clock frequency. */
 
 	(void)tiva_i2c_setclock(priv, frequency);
 
@@ -2008,7 +2008,7 @@ static int tiva_i2c_write(struct i2c_dev_s *dev, const uint8_t *buffer, int bufl
 	struct i2c_msg_s msgv = {
 		.addr = inst->address,
 		.flags = inst->flags,
-		.buffer = (uint8_t *) buffer,
+		.buffer = (uint8_t *)buffer,
 		.length = buflen
 	};
 
@@ -2060,7 +2060,7 @@ static int tiva_i2c_writeread(struct i2c_dev_s *dev, const uint8_t *wbuffer, int
 		{
 			.addr = inst->address,
 			.flags = inst->flags,
-			.buffer = (uint8_t *) wbuffer,	/* This is really ugly, sorry const ... */
+			.buffer = (uint8_t *)wbuffer,	/* This is really ugly, sorry const ... */
 			.length = wbuflen
 		},
 		{

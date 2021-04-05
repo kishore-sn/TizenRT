@@ -69,13 +69,33 @@
 #include <tinyara/kthread.h>
 #include <tinyara/userspace.h>
 #include <tinyara/net/net.h>
+#ifdef CONFIG_SCHED_WORKQUEUE
+#include <tinyara/wqueue.h>
+#endif
 #ifdef CONFIG_LOGM
 #include <tinyara/logm.h>
 #endif
-#include "wqueue/wqueue.h"
+#ifdef CONFIG_SCHED_CPULOAD
+#include <tinyara/cpuload.h>
+#endif
+#ifdef CONFIG_MMINFO
+#include <tinyara/mminfo.h>
+#endif
+#ifdef CONFIG_TASK_MANAGER
+#include <tinyara/task_manager_drv.h>
+#endif
 #include "init/init.h"
 #ifdef CONFIG_PAGING
 #include "paging/paging.h"
+#endif
+#ifdef CONFIG_BINARY_MANAGER
+#include "binary_manager/binary_manager.h"
+#endif
+#ifdef CONFIG_TASK_MONITOR
+#include "task_monitor/task_monitor_internal.h"
+#endif
+#ifdef CONFIG_MESSAGING_IPC
+#include "messaging/message_ctrl.h"
 #endif
 
 /****************************************************************************
@@ -90,7 +110,7 @@
 #error No initialization mechanism selected (CONFIG_INIT_NONE)
 
 #else
-#if !defined(CONFIG_INIT_ENTRYPOINT) && !defined(CONFIG_INIT_FILEPATH)
+#if !defined(CONFIG_INIT_ENTRYPOINT)
 /* For backward compatibility with older defconfig files when this was
  * the way things were done.
  */
@@ -101,36 +121,10 @@
 #if defined(CONFIG_INIT_ENTRYPOINT)
 /* Initialize by starting a task at an entry point */
 
-#ifndef CONFIG_USER_ENTRYPOINT
+#if !defined(CONFIG_USER_ENTRYPOINT) && !defined(CONFIG_TASH)
 /* Entry point name must have been provided */
 
 #error CONFIG_USER_ENTRYPOINT must be defined
-#endif
-
-#elif defined(CONFIG_INIT_FILEPATH)
-/* Initialize by running an initialization program in the file system.
- * Presumably the user has configured a board initialization function
- * that will mount the file system containing the initialization
- * program.
- */
-
-#ifndef CONFIG_BOARD_INITIALIZE
-#warning You probably need CONFIG_BOARD_INITIALIZE to mount the file system
-#endif
-
-#ifndef CONFIG_USER_INITPATH
-/* Path to the initialization program must have been provided */
-
-#error CONFIG_USER_INITPATH must be defined
-#endif
-
-#if !defined(CONFIG_INIT_SYMTAB) || !defined(CONFIG_INIT_NEXPORTS)
-/* No symbol information... assume no symbol table is available */
-
-#undef CONFIG_INIT_SYMTAB
-#undef CONFIG_INIT_NEXPORTS
-#define CONFIG_INIT_SYMTAB NULL
-#define CONFIG_INIT_NEXPORTS 0
 #endif
 #endif
 #endif
@@ -259,68 +253,76 @@ static inline void os_do_appstart(void)
 	board_initialize();
 #endif
 
+#ifdef CONFIG_SE
+	se_initialize();
+#endif
+
+#ifdef CONFIG_IOTDEV
+	iotbus_sig_register();
+#endif
+
 #ifdef CONFIG_NET
 	/* Initialize the network system & Create network task if required */
 
 	net_initialize();
 #endif
 
+#ifdef CONFIG_SCHED_CPULOAD
+	cpuload_initialize();
+#endif
+
+#ifdef CONFIG_TASK_MANAGER
+	task_manager_drv_register();
+#endif
+
+#ifdef CONFIG_MESSAGING_IPC
+	messaging_initialize();
+#endif
+
+#ifdef CONFIG_MMINFO
+	mminfo_register();
+#endif
+
+#ifdef CONFIG_TASK_MONITOR
+	pid = kernel_thread("taskmonitor", CONFIG_TASK_MONITOR_PRIORITY, 1024, task_monitor, (FAR char *const *)NULL);
+	if (pid < 0) {
+		sdbg("Failed to start task monitor\n");
+	}
+#endif
+
+#if defined(CONFIG_SYSTEM_PREAPP_INIT) && !defined(CONFIG_APP_BINARY_SEPARATION)
+	svdbg("Starting application init task\n");
+
+	pid = task_create("appinit", SCHED_PRIORITY_DEFAULT, CONFIG_SYSTEM_PREAPP_STACKSIZE, preapp_start, (FAR char *const *)NULL);
+	if (pid < 0) {
+		svdbg("Failed to create application init thread\n");
+	}
+#endif
+
+#ifdef CONFIG_BINARY_MANAGER
+	svdbg("Starting binary manager thread\n");
+
+	pid = kernel_thread(BINARY_MANAGER_NAME, BINARY_MANAGER_PRIORITY, BINARY_MANAGER_STACKSIZE, binary_manager, NULL);
+	if (pid < 0) {
+		sdbg("Failed to start binary manager");
+	}
+#endif
+
+#if !defined(CONFIG_BINARY_MANAGER)
 	/* Start the application initialization task.  In a flat build, this is
 	 * entrypoint is given by the definitions, CONFIG_USER_ENTRYPOINT.  In
 	 * the protected build, however, we must get the address of the
 	 * entrypoint from the header at the beginning of the user-space blob.
 	 */
 
-	svdbg("Starting application init thread\n");
+	svdbg("Starting application main task\n");
 
-#ifdef CONFIG_SYSTEM_PREAPP_INIT
-#ifdef CONFIG_BUILD_PROTECTED
-	DEBUGASSERT(USERSPACE->preapp_start != NULL);
-	pid = task_create("appinit", SCHED_PRIORITY_DEFAULT, CONFIG_SYSTEM_PREAPP_STACKSIZE, USERSPACE->preapp_start, (FAR char *const *)NULL);
-#else
-	pid = task_create("appinit", SCHED_PRIORITY_DEFAULT, CONFIG_SYSTEM_PREAPP_STACKSIZE, preapp_start, (FAR char *const *)NULL);
-#endif
-#endif
-
-	svdbg("Starting application main thread\n");
-
-#ifdef CONFIG_BUILD_PROTECTED
-	DEBUGASSERT(USERSPACE->us_entrypoint != NULL);
-	pid = task_create("appmain", SCHED_PRIORITY_DEFAULT, CONFIG_USERMAIN_STACKSIZE, USERSPACE->us_entrypoint, (FAR char *const *)NULL);
-#else
+#if defined(CONFIG_USER_ENTRYPOINT)
 	pid = task_create("appmain", SCHED_PRIORITY_DEFAULT, CONFIG_USERMAIN_STACKSIZE, (main_t)CONFIG_USER_ENTRYPOINT, (FAR char *const *)NULL);
 #endif
+#endif // !CONFIG_BINARY_MANAGER
+
 	ASSERT(pid > 0);
-}
-
-#elif defined(CONFIG_INIT_FILEPATH)
-static inline void os_do_appstart(void)
-{
-	int ret;
-
-#ifdef CONFIG_BOARD_INITIALIZE
-	/* Perform any last-minute, board-specific initialization, if so
-	 * configured.
-	 */
-
-	board_initialize();
-#endif
-
-#ifdef CONFIG_NET
-	/* Initialize the network system & Create network task if required */
-
-	net_initialize();
-#endif
-
-	/* Start the application initialization program from a program in a
-	 * mounted file system.  Presumably the file system was mounted as part
-	 * of the board_initialize() operation.
-	 */
-
-	svdbg("Starting init task: %s\n", CONFIG_USER_INITPATH);
-
-	ret = exec(CONFIG_USER_INITPATH, NULL, CONFIG_INIT_SYMTAB, CONFIG_INIT_NEXPORTS);
-	ASSERT(ret >= 0);
 }
 
 #elif defined(CONFIG_INIT_NONE)
@@ -418,12 +420,7 @@ static inline void os_start_application(void)
  *   symbols, either:
  *
  *   - CONFIG_USER_ENTRYPOINT: This is the default user application entry
- *                 point, or
- *   - CONFIG_USER_INITPATH: The full path to the location in a mounted
- *                 file system where we can expect to find the
- *                 initialization program.  Presumably, this file system
- *                 was mounted by board-specific logic when
- *                 board_initialize() was called.
+ *                 point
  *
  * Input Parameters:
  *   None

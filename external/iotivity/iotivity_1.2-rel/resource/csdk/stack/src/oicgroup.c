@@ -26,7 +26,7 @@
 
 #include "oicgroup.h"
 #if defined (__TIZENRT__)
-#include <apps/netutils/cJSON.h>
+#include <json/cJSON.h>
 #else
 #include "cJSON.h"
 #endif
@@ -819,7 +819,7 @@ OCStackResult BuildStringFromActionSet(OCActionSet* actionset, char** desc)
     actionTypeStr = (char *)OICMalloc(1024);
     if(actionTypeStr != NULL)
     {
-        sprintf(actionTypeStr, "%ld %u", actionset->timesteps, actionset->type);
+        snprintf(actionTypeStr, 1024, "%ld %u", actionset->timesteps, actionset->type);
         if(remaining >= strlen(actionTypeStr) + strlen(ACTION_DELIMITER) + 1)
         {
             strncat(temp, actionTypeStr, strlen(actionTypeStr));

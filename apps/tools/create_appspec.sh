@@ -40,7 +40,7 @@ echo -e "USER_ENTRYPOINT=$USER_ENTRYPOINT\n" >> $OSDIR$METAFILE
 for FILE in $TARGET_DIR_LIST
 do
 	APPNAME=`sed -n '/^APPNAME/p' $APPDIR$FILE$MAKEFILE | sed -n 's/APPNAME = //p'`
-	FUNCTION=`sed -n '/^FUNCNAME/p' $APPDIR$FILE$MAKEFILE | sed -n 's/FUNCNAME = //p'`
+	FUNCTION=`grep -A 3 'config USER_ENTRYPOINT' $APPDIR$FILE$KCONFIG | sed -n 's/\tdefault "\(\w*\)".*/\1/p'`
 	CONFIG_NAME=`sed -n '/depends/p' $APPDIR$FILE$KCONFIG_ENTRY | sed -n 's/.*depends on //p'`
 	if [ "$CONFIG_NAME" = "" ]; then
 		continue
@@ -51,7 +51,7 @@ do
 	else
 		CONFIG_USE="y"
 	fi
-	DISCRIPTION=`sed -n '/bool/p' $APPDIR$FILE$KCONFIG_ENTRY | sed -n 's/.*bool //p'`
+	DESCRIPTION=`sed -n '/bool/p' $APPDIR$FILE$KCONFIG_ENTRY | sed -n 's/.*bool //p'`
 	KCONFIG_INFO=`sed -n "/config $CONFIG_NAME$/,/^$/p" $APPDIR$FILE$KCONFIG`
 	DEPENDENCY=`echo "$KCONFIG_INFO" | sed -n '/depends on/p'`
 	SELECTFLAG=`echo "$KCONFIG_INFO" | sed -n '/select/p'`
@@ -61,7 +61,7 @@ do
 		SELECTABLE="y"
 	fi
 	if [ "$APPNAME" != "" ]
-		then echo "{ $APPNAME, $FUNCTION, CONFIG_$CONFIG_NAME, $CONFIG_USE, $SELECTABLE, $DISCRIPTION }" >> $OSDIR$METAFILE
+		then echo "{ $APPNAME, $FUNCTION, CONFIG_$CONFIG_NAME, $CONFIG_USE, $SELECTABLE, $DESCRIPTION }" >> $OSDIR$METAFILE
 	fi
 done
 

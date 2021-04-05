@@ -138,6 +138,7 @@ struct pollfd {
 	pollevent_t events;			/* The input event flags */
 	pollevent_t revents;		/* The output event flags */
 	FAR void *priv;				/* For use by drivers */
+	FAR void *filep;			/* The file pointer corresponding to fd */
 #ifdef CONFIG_NET_LWIP
 	FAR void *scb;
 #endif
@@ -161,9 +162,9 @@ extern "C" {
 
 /**
  * @ingroup POLL_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief  POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @details SYSTEM CALL API
+ * @since TizenRT v1.0
  */
 int poll(FAR struct pollfd *fds, nfds_t nfds, int timeout);
 

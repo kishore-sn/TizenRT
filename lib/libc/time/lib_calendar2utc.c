@@ -193,13 +193,20 @@ time_t clock_calendar2utc(int year, int month, int day)
 {
 	time_t days;
 
+	/* If the year according to the RTC's Epoch is less than 1970,
+	 *  it is assumed to be 100 years later, that is,between 2000 and 2069.
+	 *  Refer : https://man7.org/linux/man-pages/man4/rtc.4.html */
+	if (year < EPOCH_YEAR) {
+		year += 100;
+	}
+
 	/* Years since epoch in units of days (ignoring leap years). */
 
-	days = (year - 1970) * 365;
+	days = (year - EPOCH_YEAR) * 365;
 
 	/* Add in the extra days for the leap years prior to the current year. */
 
-	days += (year - 1969) >> 2;
+	days += (year - (EPOCH_YEAR - 1)) >> 2;
 
 	/* Add in the days up to the beginning of this month. */
 

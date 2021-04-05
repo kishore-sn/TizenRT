@@ -1,30 +1,28 @@
-
 sudo: false
 dist: trusty
-group: deprecated-2017Q2
 
+git:
+  submodules: false
 
 language: c
 
 services:
-
 - docker
 
+branches:
+  only:
+  - master
+
 env:
-- BUILD_CONFIG=tash
-- BUILD_CONFIG=nettest
-- BUILD_CONFIG=minimal
-- BUILD_CONFIG=tc
-
-
+  global:
+    - TIZENRT_IMG_VERSION=latest
+  
 before_install:
-- docker pull an4967/tizenrt:1.1
+- docker pull tizenrt/tizenrt:${TIZENRT_IMG_VERSION}
 - echo "${TRAVIS_BUILD_DIR}"
 
 script:
-- docker run -d -it --name tizenrt_docker -v ${TRAVIS_BUILD_DIR}:/root/tizenrt -w /root/tizenrt/os an4967/tizenrt:1.1 /bin/bash
-- docker exec tizenrt_docker make distclean
+- docker run -d -it --name tizenrt_docker -v ${TRAVIS_BUILD_DIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${TIZENRT_IMG_VERSION} /bin/bash
+- docker exec tizenrt_docker arm-none-eabi-gcc --version
 
-- docker exec -it tizenrt_docker bash -c "cd tools; ./configure.sh artik053/${BUILD_CONFIG}"
-- docker exec -it tizenrt_docker bash -c "export PATH=/root/gcc-arm-none-eabi-4_9-2015q3/bin:$PATH;make;"
-
+- docker exec -it tizenrt_docker bash -c "./tools/build_test.sh"

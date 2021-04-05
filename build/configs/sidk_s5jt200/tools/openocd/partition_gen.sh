@@ -23,11 +23,15 @@
 # Created partition map cfg file can be included in the main openocd cfg script
 # for flashing.
 
-source .config
+THIS_PATH=`test -d ${0%/*} && cd ${0%/*}; pwd`
+
+# When location of this script is changed, only OS_DIR_PATH should be changed together!!!
+OS_DIR_PATH=${THIS_PATH}/../../../../../os
+
+source ${OS_DIR_PATH}/.config
 
 # Path ENV
 BOARD_NAME=${CONFIG_ARCH_BOARD}
-OS_DIR_PATH=${PWD}
 BUILD_DIR_PATH=${OS_DIR_PATH}/../build
 BOARD_DIR_PATH=${BUILD_DIR_PATH}/configs/${BOARD_NAME}
 OPENOCD_DIR_PATH=${BOARD_DIR_PATH}/tools/openocd
@@ -78,7 +82,7 @@ echo "# Partition Map (Auto generated)" > ${PARTITION_MAP_CFG}
 echo "set FLASH_START $FLASH_BASE" >> ${PARTITION_MAP_CFG}
 for pname in $partname_list
 do
-	if [ "$pname" == "romfs" ]; then
+	if [ "$pname" == "rom" ]; then
 		romfs_part_exist=1
 	fi
 

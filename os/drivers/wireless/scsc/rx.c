@@ -27,11 +27,10 @@
 
 extern void l2_packet_receive(void *ctx, const u8 *src_addr, u8 *ptr, u16 len);
 
-void slsi_rx_scan_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_scan_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	u16 scan_id = fapi_get_u16(mbuf, u.mlme_scan_ind.scan_id);
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
-
 	SLSI_NET_DBG3(dev, SLSI_MLME, "mlme_scan_ind(interface:%d, scan_id:%d (%#x)) bssid: " SLSI_MAC_FORMAT "\n", ndev_vif->ifnum, scan_id, scan_id, SLSI_MAC_STR(fapi_get_mgmt(mbuf)->bssid));
 
 	scan_id = (scan_id & 0xFF);
@@ -51,7 +50,7 @@ void slsi_rx_scan_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff 
 	slsi_mbuf_queue_tail(&ndev_vif->scan[scan_id].scan_results, mbuf);
 }
 
-void slsi_rx_scan_done_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_scan_done_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	u16 scan_id = fapi_get_u16(mbuf, u.mlme_scan_done_ind.scan_id);
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
@@ -103,7 +102,7 @@ int slsi_find_scan_freq(struct slsi_80211_mgmt *mgmt, size_t mgmt_len, u16 freq)
 	return freq;
 }
 
-void __slsi_rx_blockack_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void __slsi_rx_blockack_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	struct slsi_peer *peer;
@@ -127,7 +126,7 @@ void __slsi_rx_blockack_ind(struct slsi_dev *sdev, struct netif *dev, struct max
 	slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_blockack_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_blockack_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 
@@ -136,7 +135,7 @@ void slsi_rx_blockack_ind(struct slsi_dev *sdev, struct netif *dev, struct max_b
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 }
 
-static bool get_wmm_ie_from_resp_ie(struct slsi_dev *sdev, struct netif *dev, u8 *resp_ie, size_t resp_ie_len, const u8 **wmm_elem, size_t *wmm_elem_len)
+static bool get_wmm_ie_from_resp_ie(struct slsi_dev *sdev, struct netdev *dev, u8 *resp_ie, size_t resp_ie_len, const u8 **wmm_elem, size_t *wmm_elem_len)
 {
 	struct slsi_80211_vendor_ie *ie;
 
@@ -161,7 +160,7 @@ static bool get_wmm_ie_from_resp_ie(struct slsi_dev *sdev, struct netif *dev, u8
 	return true;
 }
 
-static bool sta_wmm_update_acm(struct slsi_dev *sdev, struct netif *dev, struct slsi_peer *peer, u8 *assoc_rsp_ie, size_t assoc_rsp_ie_len)
+static bool sta_wmm_update_acm(struct slsi_dev *sdev, struct netdev *dev, struct slsi_peer *peer, u8 *assoc_rsp_ie, size_t assoc_rsp_ie_len)
 {
 	size_t left;
 	const u8 *pos;
@@ -215,7 +214,7 @@ static bool sta_wmm_update_acm(struct slsi_dev *sdev, struct netif *dev, struct 
 }
 
 /* Retrieve any buffered frame before connected_ind and pass them up. */
-void slsi_rx_buffered_frames(struct slsi_dev *sdev, struct netif *dev, struct slsi_peer *peer)
+void slsi_rx_buffered_frames(struct slsi_dev *sdev, struct netdev *dev, struct slsi_peer *peer)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	struct max_buff *buff_frame = NULL;
@@ -252,7 +251,7 @@ void slsi_rx_buffered_frames(struct slsi_dev *sdev, struct netif *dev, struct sl
 	}
 }
 
-void slsi_rx_connected_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_connected_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	struct slsi_peer *peer = NULL;
@@ -281,7 +280,7 @@ void slsi_rx_connected_ind(struct slsi_dev *sdev, struct netif *dev, struct max_
 			SLSI_NET_ERR(dev, "Peer (aid:%d) Not Found - Disconnect peer\n", aid);
 			goto exit_with_lock;
 		}
-		slsi_connect_indication(ndev_vif, peer->assoc_ie->data, peer->assoc_ie->len, NULL, 0, 0, ndev_vif->vif_type, peer->address);
+		slsi_connect_indication(ndev_vif, slsi_mbuf_get_data(peer->assoc_ie), peer->assoc_ie->data_len, NULL, 0, 0, ndev_vif->vif_type, peer->address);
 
 		if (ndev_vif->ap.privacy) {
 			peer->connected_state = SLSI_STA_CONN_STATE_DOING_KEY_CONFIG;
@@ -305,7 +304,7 @@ exit_with_lock:
 	slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_connect_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_connect_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	enum slsi_status_code status = WLAN_STATUS_SUCCESS;
@@ -342,8 +341,8 @@ void slsi_rx_connect_ind(struct slsi_dev *sdev, struct netif *dev, struct max_bu
 		peer = slsi_get_peer_from_qs(sdev, dev, SLSI_STA_PEER_QUEUESET);
 		if (peer) {
 			if (peer->assoc_ie) {
-				assoc_ie = peer->assoc_ie->data;
-				assoc_ie_len = peer->assoc_ie->len;
+				assoc_ie = slsi_mbuf_get_data(peer->assoc_ie);
+				assoc_ie_len = peer->assoc_ie->data_len;
 			}
 
 			slsi_peer_update_assoc_rsp(sdev, dev, peer, mbuf);
@@ -351,8 +350,8 @@ void slsi_rx_connect_ind(struct slsi_dev *sdev, struct netif *dev, struct max_bu
 			mbuf = NULL;
 
 			if (peer->assoc_resp_ie) {
-				assoc_rsp_ie = peer->assoc_resp_ie->data;
-				assoc_rsp_ie_len = peer->assoc_resp_ie->len;
+				assoc_rsp_ie = slsi_mbuf_get_data(peer->assoc_resp_ie);
+				assoc_rsp_ie_len = peer->assoc_resp_ie->data_len;
 				ssid_ie = slsi_80211_find_ie(WLAN_EID_SSID, assoc_ie, assoc_ie_len);
 				if (ssid_ie != NULL) {
 					peer->ssid_len = ssid_ie[1];
@@ -429,7 +428,7 @@ exit_with_lock:
 	slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_disconnect_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_disconnect_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 
@@ -443,7 +442,7 @@ void slsi_rx_disconnect_ind(struct slsi_dev *sdev, struct netif *dev, struct max
 	slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_disconnected_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_disconnected_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 
@@ -467,7 +466,7 @@ void slsi_rx_disconnected_ind(struct slsi_dev *sdev, struct netif *dev, struct m
 	slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_procedure_started_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_procedure_started_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	struct slsi_peer *peer = NULL;
@@ -557,7 +556,7 @@ exit_with_lock:
 
 #ifdef CONFIG_SCSC_ENABLE_P2P
 /* Handle Procedure Started (Type = Device Discovered) indication for P2P */
-static void slsi_rx_p2p_device_discovered_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+static void slsi_rx_p2p_device_discovered_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	int mgmt_len;
@@ -585,7 +584,7 @@ static void slsi_rx_p2p_device_discovered_ind(struct slsi_dev *sdev, struct neti
 }
 #endif
 
-void slsi_rx_frame_transmission_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_frame_transmission_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	u16 host_tag = fapi_get_u16(mbuf, u.mlme_frame_transmission_ind.host_tag);
@@ -626,7 +625,7 @@ void slsi_rx_frame_transmission_ind(struct slsi_dev *sdev, struct netif *dev, st
 
 			/* If frame transmission was initiated on P2P device vif by supplicant, then use the net_dev of that vif (i.e. p2p0) */
 			if ((mgmt) && (memcmp(mgmt->sa, dev->dev_addr, ETH_ALEN) != 0)) {
-				struct netif *ndev = slsi_get_netdev(sdev, SLSI_NET_INDEX_P2P);
+				struct netdev *ndev = slsi_get_netdev(sdev, SLSI_NET_INDEX_P2P);
 
 				SLSI_NET_DBG2(dev, SLSI_MLME, "Frame Tx was requested with device address - Change ndev_vif for tx_status\n");
 
@@ -685,7 +684,7 @@ exit:
 	slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_received_frame_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_received_frame_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	u16 data_unit_descriptor = fapi_get_u16(mbuf, u.mlme_received_frame_ind.data_unit_descriptor);
@@ -762,41 +761,44 @@ else
 		mbuf_pull(mbuf, fapi_get_siglen(mbuf));
 
 		/* test for an overlength frame */
-		if (mbuf->len > (dev->mtu + ETH_HLEN)) {
+		int mtu = 0;
+#ifdef CONFIG_NET_NETMGR
+		(void)netdev_get_mtu(dev, &mtu);
+#else
+		mtu = dev->mtu;
+#endif
+		if (mbuf->data_len > (mtu + ETH_HLEN)) {
 			/* A bogus length ethfrm has been encap'd. */
 			/* Is someone trying an oflow attack? */
-			SLSI_WARN(sdev, "oversize frame (%d > %d)\n", mbuf->len, dev->mtu + ETH_HLEN);
+			SLSI_WARN(sdev, "oversize frame (%d > %d)\n", mbuf->data_len, mtu + ETH_HLEN);
 			SLSI_INCR_DATA_PATH_STATS(sdev->dp_stats.rx_drop_large_frame);
 			goto exit;
 		}
 
 		SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
-		/*SLSI_DBG2(sdev, SLSI_MLME, "pass %u bytes up (proto:%d)\n", mbuf->len, ntohs(mbuf->protocol)); */
-		SLSI_DBG3(sdev, SLSI_RX, "pass %u bytes to local stack\n", mbuf->len);
-		dev->d_buf = mbuf->data;
-		dev->d_len = mbuf->len;
+		SLSI_DBG3(sdev, SLSI_RX, "pass %u bytes to local stack\n", mbuf->data_len);
 
 		if (ntohs(ehdr->h_proto) == ETH_P_PAE) {
 			SLSI_INCR_DATA_PATH_STATS(sdev->dp_stats.rx_num_eapol);
 			if (ndev_vif->vif_type == FAPI_VIFTYPE_STATION) {
 				SLSI_NET_DBG2(dev, SLSI_MLME, "Received eapol from AP\n");
 				mbuf_pull(mbuf, sizeof(*ehdr));
-				l2_packet_receive(ndev_vif->sdev->drv->ctx, ehdr->h_source, mbuf->data, mbuf->len);
+				l2_packet_receive(ndev_vif->sdev->drv->ctx, ehdr->h_source, slsi_mbuf_get_data(mbuf), mbuf->data_len);
 			}
 			if (ndev_vif->vif_type == FAPI_VIFTYPE_AP) {
 				union wpa_event_data event;
 				memset(&event, 0, sizeof(event));
 				SLSI_NET_DBG2(dev, SLSI_MLME, "Received eapol from STA\n");
 				mbuf_pull(mbuf, sizeof(*ehdr));
-				event.eapol_rx.data = mbuf->data;
-				event.eapol_rx.data_len = mbuf->len;
+				event.eapol_rx.data = slsi_mbuf_get_data(mbuf);
+				event.eapol_rx.data_len = mbuf->data_len;
 				event.eapol_rx.src = ehdr->h_source;
 				wpa_supplicant_event_send(ndev_vif->sdev->drv->ctx, EVENT_EAPOL_RX, &event);
 			}
 		} else {
 			SLSI_NET_DBG2(dev, SLSI_MLME, "sending non eapol\n");
 			SLSI_INCR_DATA_PATH_STATS(sdev->dp_stats.rx_num_mlme_dhcp);
-			slsi_ethernetif_input(dev, mbuf->data, mbuf->len);
+			slsi_ethernetif_input(dev, slsi_mbuf_get_data(mbuf), mbuf->data_len);
 		}
 		slsi_kfree_mbuf(mbuf);
 
@@ -807,7 +809,7 @@ SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 slsi_kfree_mbuf(mbuf);
 }
 
-void slsi_rx_mic_failure_ind(struct slsi_dev *sdev, struct netif *dev, struct max_buff *mbuf)
+void slsi_rx_mic_failure_ind(struct slsi_dev *sdev, struct netdev *dev, struct max_buff *mbuf)
 {
 	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	u8 *mac_addr;
@@ -851,7 +853,7 @@ int slsi_rx_blocking_signals(struct slsi_dev *sdev, struct max_buff *mbuf)
 
 	/* ALL mlme cfm signals MUST have blocking call waiting for it (Per Vif or Global) */
 	if (fapi_is_cfm(mbuf)) {
-		struct netif *dev;
+		struct netdev *dev;
 		struct netdev_vif *ndev_vif;
 		dev = sdev->netdev[vif];
 		if (dev) {
@@ -891,7 +893,7 @@ int slsi_rx_blocking_signals(struct slsi_dev *sdev, struct max_buff *mbuf)
 	}
 	/* Some mlme ind signals have a blocking call waiting (Per Vif or Global) */
 	if (fapi_is_ind(mbuf)) {
-		struct netif *dev;
+		struct netdev *dev;
 		struct netdev_vif *ndev_vif;
 
 		dev = slsi_get_netdev(sdev, vif);

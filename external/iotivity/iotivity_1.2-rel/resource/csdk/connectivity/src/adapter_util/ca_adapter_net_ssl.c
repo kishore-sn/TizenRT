@@ -1163,10 +1163,7 @@ static SslEndPoint_t *GetSslPeerUsingUuid(const uint8_t *identity, size_t idLeng
 const CASecureEndpoint_t *GetCASecureEndpointData(const CAEndpoint_t* peer)
 {
     OIC_LOG_V(DEBUG, NET_SSL_TAG, "In %s", __func__);
-
-    // TODO: Added as workaround, need to debug
-    oc_mutex_unlock(g_sslContextMutex);
-
+    
     oc_mutex_lock(g_sslContextMutex);
     if (NULL == g_caSslContext)
     {
@@ -1742,7 +1739,9 @@ static int InitConfig(mbedtls_ssl_config * conf, int transport, int mode)
 
 #if !defined(NDEBUG) || defined(TB_LOG)
     mbedtls_ssl_conf_dbg(conf, DebugSsl, NULL);
+#ifdef MBEDTLS_DEBUG_C
     mbedtls_debug_set_threshold(MBED_TLS_DEBUG_LEVEL);
+#endif
 #endif
     OIC_LOG_V(DEBUG, NET_SSL_TAG, "Out %s", __func__);
     return 0;
@@ -2656,10 +2655,7 @@ CAResult_t CAsslGenerateOwnerPsk(const CAEndpoint_t *endpoint,
     VERIFY_NON_NULL_RET(rsrcServerDeviceId, NET_SSL_TAG, "rsrcId is NULL", CA_STATUS_INVALID_PARAM);
     VERIFY_NON_NULL_RET(provServerDeviceId, NET_SSL_TAG, "provId is NULL", CA_STATUS_INVALID_PARAM);
     VERIFY_NON_NULL_RET(ownerPsk, NET_SSL_TAG, "ownerPSK is NULL", CA_STATUS_INVALID_PARAM);
-
-    // TODO: Added as workaround, need to debug
-    oc_mutex_unlock(g_sslContextMutex);
-
+    
     oc_mutex_lock(g_sslContextMutex);
     if (NULL == g_caSslContext)
     {

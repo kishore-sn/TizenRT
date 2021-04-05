@@ -66,9 +66,13 @@
 #include <arch/irq.h>
 #endif
 
+#include <tinyara/arch.h>
 #include <tinyara/clock.h>
 #include <tinyara/time.h>
 #include <tinyara/rtc.h>
+#ifdef CONFIG_INIT_SYSTEM_TIME
+#include <tinyara/version.h>
+#endif
 
 #include "clock/clock.h"
 
@@ -98,7 +102,7 @@
  ****************************************************************************/
 
 #ifndef CONFIG_SCHED_TICKLESS
-volatile systime_t g_system_timer;
+volatile clock_t g_system_timer;
 #endif
 
 struct timespec g_basetime;
@@ -170,7 +174,7 @@ static inline void clock_basetime(FAR struct timespec *tp)
 	 * month, and date
 	 */
 
-	jdn = clock_calendar2utc(CONFIG_START_YEAR, CONFIG_START_MONTH, CONFIG_START_DAY);
+	jdn = clock_calendar2utc(CONFIG_START_YEAR, CONFIG_START_MONTH - 1, CONFIG_START_DAY);
 
 	/* Set the base time as seconds into this julian day. */
 
@@ -199,6 +203,33 @@ static void clock_inittime(void)
 }
 
 /****************************************************************************
+ * Name: initialize_system_time
+ *
+ * Description:
+ *   Initialize the system time based on VERSION_BUILD_TIME.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_INIT_SYSTEM_TIME
+static void initialize_system_time(void)
+{
+	struct tm init_time;
+	struct timespec ts;
+	char *ret;
+
+	ret = strptime(CONFIG_VERSION_BUILD_TIME, "%Y-%m-%d %T", &init_time);
+	if (ret == NULL) {
+		return;
+	}
+
+	ts.tv_sec = mktime(&init_time);
+	ts.tv_nsec = 0;
+
+	(void)up_rtc_settime(&ts);
+}
+#endif
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -216,6 +247,9 @@ void clock_initialize(void)
 
 #if defined(CONFIG_RTC)
 	up_rtc_initialize();
+#ifdef CONFIG_INIT_SYSTEM_TIME
+	initialize_system_time();
+#endif
 #endif
 
 	/* Initialize the time value to match the RTC */

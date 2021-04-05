@@ -15,6 +15,40 @@
  * language governing permissions and limitations under the License.
  *
  ****************************************************************************/
+/****************************************************************************
+ * pm_procfs.c
+ *
+ *   Copyright (C) 2014 Gregory Nutt. All rights reserved.
+ *   Author: Gregory Nutt <gnutt@nuttx.org>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ * 3. Neither the name NuttX nor the names of its contributors may be
+ *    used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ****************************************************************************/
 
 /****************************************************************************
  * Included Files
@@ -78,6 +112,7 @@ struct power_file_s {
 struct power_procfs_entry_s {
 	const char *name;			/* Name of the directory entry */
 	size_t(*read)(FAR struct file *filep, FAR char *buffer, size_t buflen);
+	size_t(*write)(FAR struct file *filep, FAR const char *buffer, size_t buflen);
 	uint8_t type;
 };
 
@@ -89,6 +124,7 @@ struct power_procfs_entry_s {
 static int power_open(FAR struct file *filep, FAR const char *relpath, int oflags, mode_t mode);
 static int power_close(FAR struct file *filep);
 static ssize_t power_read(FAR struct file *filep, FAR char *buffer, size_t buflen);
+static ssize_t power_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
 
 static int power_dup(FAR const struct file *oldp, FAR struct file *newp);
 
@@ -105,6 +141,11 @@ static size_t power_curstate_read(FAR struct file *filep, FAR char *buffer, size
 static size_t power_metrics_read(FAR struct file *filep, FAR char *buffer, size_t buflen);
 #endif
 static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_t buflen);
+static size_t power_lock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
+static size_t power_unlock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
+#ifdef CONFIG_PM_ENTER_SLEEP
+static size_t enter_sleep_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
+#endif
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -112,12 +153,17 @@ static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_
 #define POWER_SUBDIRPATH_DOMAINS "power/domains"
 
 static const struct power_procfs_entry_s g_power_direntry[] = {
-	{"states", power_states_read, DTYPE_FILE},
-	{"curstate", power_curstate_read, DTYPE_FILE},
+	{"states", power_states_read, NULL, DTYPE_FILE},
+	{"curstate", power_curstate_read, NULL, DTYPE_FILE},
 #ifdef CONFIG_PM_METRICS
-	{"metrics", power_metrics_read, DTYPE_FILE},
+	{"metrics", power_metrics_read, NULL, DTYPE_FILE},
 #endif
-	{"devices", power_devices_read, DTYPE_FILE},
+	{"devices", power_devices_read, NULL, DTYPE_FILE},
+	{"pm_lock", NULL, power_lock_write, DTYPE_FILE},
+	{"pm_unlock", NULL, power_unlock_write, DTYPE_FILE},
+#ifdef CONFIG_PM_ENTER_SLEEP
+	{"enter_sleep", NULL, enter_sleep_write, DTYPE_FILE},
+#endif
 };
 
 static const uint8_t g_power_direntrycount = sizeof(g_power_direntry) / sizeof(struct power_procfs_entry_s);
@@ -144,7 +190,7 @@ const struct procfs_operations power_procfsoperations = {
 	power_open,					/* open */
 	power_close,				/* close */
 	power_read,					/* read */
-	NULL,						/* write */
+	power_write,					/* write */
 
 	power_dup,					/* dup */
 
@@ -258,7 +304,6 @@ static size_t power_states_read(FAR struct file *filep, FAR char *buffer, size_t
 
 	priv = (FAR struct power_file_s *)filep->f_priv;
 
-	copysize = 0;
 	totalsize = 0;
 
 	if (priv->offset == 0) {
@@ -370,7 +415,7 @@ static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_
 {
 	FAR struct power_file_s *priv;
 	FAR struct pm_callback_s *callback;
-	FAR sq_entry_t *entry;
+	FAR dq_entry_t *entry;
 	size_t copysize;
 	size_t totalsize;
 	int domain;
@@ -383,7 +428,7 @@ static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_
 		domain = priv->dir.domain;
 
 		if (domain >= 0 && domain < CONFIG_PM_NDOMAINS) {
-			entry = sq_peek(&g_pmglobals.domain[domain].registry);
+			entry = dq_peek(&g_pmglobals.registry);
 			while (entry) {
 				callback = (FAR struct pm_callback_s *)entry;
 				copysize = snprintf(buffer, buflen, "%s ", callback->name);
@@ -402,6 +447,65 @@ static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_
 }
 
 /****************************************************************************
+ * Name: power_lock_write
+ ****************************************************************************/
+static size_t power_lock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
+{
+	int state = atoi(buffer);
+
+	if (state >= PM_NORMAL && state < PM_SLEEP) {
+		pm_stay(0, state);
+		fvdbg("power locked!\n");
+	} else {
+		fdbg("ERROR: Invalid state passed \n");
+	}
+
+	return buflen;
+}
+
+/****************************************************************************
+ * Name: power_unlock_write
+ ****************************************************************************/
+static size_t power_unlock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
+{
+	int state = atoi(buffer);
+
+	if (state >= PM_NORMAL && state < PM_SLEEP) {
+		pm_relax(0, state);
+		fvdbg("power unlocked!\n");
+	} else {
+		fdbg("ERROR: Invalid state passed \n");
+	}
+
+	return buflen;
+}
+
+/****************************************************************************
+ * Name: enter_sleep_write
+ ****************************************************************************/
+ #ifdef CONFIG_PM_ENTER_SLEEP
+static size_t enter_sleep_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
+{
+	int len;
+	int ret;
+	char *p;
+
+	p = memchr(buffer, '\n', buflen);
+	len = p ? p - buffer : buflen;
+
+	if (len == 5 && !strncmp(buffer, "sleep", len)) {
+		ret = up_pmsleep();
+		if (ret == -EAGAIN) {
+			fdbg("ERROR: PM state locked, try later:%d\n", ret);
+		} else if (ret < 0) {
+			fdbg("ERROR: Some of the drivers refused the state change:%d\n", ret);
+		}
+	}
+
+	return buflen;
+}
+#endif
+/****************************************************************************
  * Name: power_open
  ****************************************************************************/
 
@@ -411,17 +515,6 @@ static int power_open(FAR struct file *filep, FAR const char *relpath, int oflag
 	int ret;
 
 	fvdbg("Open '%s'\n", relpath);
-
-	/* PROCFS is read-only.  Any attempt to open with any kind of write
-	 * access is not permitted.
-	 *
-	 * REVISIT:  Write-able proc files could be quite useful.
-	 */
-
-	if ((oflags & O_WRONLY) != 0 || (oflags & O_RDONLY) == 0) {
-		fdbg("ERROR: Only O_RDONLY supported\n");
-		return -EACCES;
-	}
 
 	/* Allocate a container to hold the task and attribute selection */
 	priv = (FAR struct power_file_s *)kmm_malloc(sizeof(struct power_file_s));
@@ -499,6 +592,37 @@ static ssize_t power_read(FAR struct file *filep, FAR char *buffer, size_t bufle
 	return ret;
 }
 
+/****************************************************************************
+ * Name: power_write
+ ****************************************************************************/
+
+static ssize_t power_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
+{
+	FAR struct power_file_s *priv;
+	ssize_t ret;
+
+	fvdbg("buffer=%p buflen=%d\n", buffer, (int)buflen);
+
+	/* Recover our private data from the struct file instance */
+
+	priv = (FAR struct power_file_s *)filep->f_priv;
+	DEBUGASSERT(priv);
+
+	/* Perform the read based on the directory entry */
+
+	ret = 0;
+
+	if (priv->dir.base.level == 3 && priv->dir.direntry < g_power_direntrycount) {
+		ret = g_power_direntry[priv->dir.direntry].write(filep, buffer, buflen);
+	}
+
+	/* Update the file offset */
+	if (ret > 0) {
+		filep->f_pos += ret;
+	}
+
+	return ret;
+}
 /****************************************************************************
  * Name: power_dup
  *

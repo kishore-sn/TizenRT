@@ -58,8 +58,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <apps/ftpc.h>
-
 #include "ftpc.h"
 
 /****************************************************************************
@@ -105,7 +103,7 @@ int cmd_rquit(SESSION handle, int argc, char **argv)
 		printf("quit failed: %d\n", errno);
 		return ERROR;
 	}
-	printf("Exitting...\n");
+	printf("Exiting...\n");
 	return OK;
 }
 

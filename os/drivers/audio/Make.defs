@@ -1,4 +1,4 @@
-###########################################################################
+##########################################################################
 #
 # Copyright 2017 Samsung Electronics All Rights Reserved.
 #
@@ -14,7 +14,7 @@
 # either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 #
-###########################################################################
+############################################################################
 ############################################################################
 # drivers/audio/Make.defs
 # These drivers support various Audio devices using the NuttX Audio
@@ -68,8 +68,12 @@ ifeq ($(CONFIG_AUDIO_ALC5658),y)
 CSRCS += alc5658.c
 endif
 
-ifeq ($(CONFIG_AUDIO_ALC5658CHAR),y)
-CSRCS += alc5658char.c
+ifeq ($(CONFIG_AUDIO_CX20921),y)
+CSRCS += cx20921.c
+endif
+
+ifeq ($(CONFIG_AUDIO_TAS5749),y)
+CSRCS += tas5749.c
 endif
 
 # Include Audio driver support

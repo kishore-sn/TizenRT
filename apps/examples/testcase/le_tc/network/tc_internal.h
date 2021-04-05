@@ -22,12 +22,7 @@
 #ifndef __EXAMPLES_TESTCASE_NETWORK_TC_INTERNAL_H
 #define __EXAMPLES_TESTCASE_NETWORK_TC_INTERNAL_H
 
-#define RETURN_ERR return
-
 #include "tc_common.h"
-
-extern int total_pass;
-extern int total_fail;
 
 /**********************************************************
 * TC Function Declarations
@@ -36,11 +31,14 @@ extern int total_fail;
 #ifdef CONFIG_TC_NET_SOCKET
 int net_socket_main(void);
 #endif
+#ifdef CONFIG_TC_NET_PBUF
+int net_pbuf_main(void);
+#endif
 #ifdef CONFIG_TC_NET_GETSOCKOPT
 void net_getsockopt_main(void);
 #endif
 #ifdef CONFIG_TC_NET_SETSOCKOPT
-int net_setsockopt_main(void);
+void net_setsockopt_main(void);
 #endif
 #ifdef CONFIG_TC_NET_CONNECT
 int net_connect_main(void);
@@ -87,4 +85,47 @@ int net_shutdown_main(void);
 #ifdef CONFIG_TC_NET_SELECT
 int net_select_main(void);
 #endif
+#ifdef CONFIG_TC_NET_DHCPC
+int net_dhcpc_main(void);
+#endif
+#ifdef CONFIG_TC_NET_INET
+int net_inet_main(void);
+#endif
+#ifdef CONFIG_TC_NET_ETHER
+int net_ether_main(void);
+#endif
+#ifdef CONFIG_TC_NET_NETDB
+int net_netdb_main(void);
+#endif
+#ifdef CONFIG_TC_NET_DUP
+int net_dup_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_CLOSE
+int itc_net_close_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_DUP
+int itc_net_dup_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_FCNTL
+int itc_net_fcntl_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_LISTEN
+int itc_net_listen_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_SETSOCKOPT
+int itc_net_setsockopt_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_SEND
+int itc_net_send_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_INET
+int itc_net_inet_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_NETDB
+int itc_net_netdb_main(void);
+#endif
+#ifdef CONFIG_ITC_NET_CONNECT
+int itc_net_connect_main(void);
+#endif
+int tc_get_fd(void);
 #endif /* __EXAMPLES_TESTCASE_NETWORK_TC_INTERNAL_H */

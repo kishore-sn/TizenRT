@@ -57,7 +57,7 @@
  * @{
  */
 
-/// @file select.h
+/// @file sys/select.h
 /// @brief synchronous I/O multiplexing APIs
 
 #ifndef __INCLUDE_SYS_SELECT_H
@@ -73,12 +73,6 @@
 #include <time.h>
 
 #if CONFIG_NFILE_DESCRIPTORS > 0 || CONFIG_NSOCKET_DESCRIPTORS > 0
-
-#if defined(CONFIG_DISABLE_POLL) && defined(CONFIG_NET_SOCKET)
-
-#include <net/lwip/sockets.h>
-
-#else
 
 /****************************************************************************
  * Pre-Processor Definitions
@@ -112,13 +106,6 @@
 #warning "Large fd_set needed"
 #endif
 
-/* Standard helper macros */
-
-#define FD_CLR(fd, set)   ((set)->fd_bits[(fd)/8]) &= ~(1 << ((fd) & 7))
-#define FD_SET(fd, set)   ((set)->fd_bits[(fd)/8]) |= (1 << ((fd) & 7))
-#define FD_ISSET(fd, set) ((set)->fd_bits[(fd)/8]) &  (1 << ((fd) & 7))
-#define FD_ZERO(set)      memset(set, 0, sizeof(fd_set))
-
 /****************************************************************************
  * Type Definitions
  ****************************************************************************/
@@ -126,6 +113,33 @@
 typedef struct fd_set {
 	uint8_t fd_bits[__SELECT_NUINT32 * 4];
 } fd_set;
+
+/****************************************************************************
+ * Integration with LWIP
+ *
+ * select() can be defined in fs/vfs/fs_select.c or
+ * or in net/socket/bsd_socket_api.c when CONFIG_DISABLE_POLL=y
+ *
+ * in the second case LWIP implementation will be used with own declatations
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_DISABLE_POLL)
+
+#if !defined(CONFIG_NET_SOCKET)
+/* #error Both system poll and network sockets are disabled */
+#else
+#include "lwip/sockets.h"
+#endif
+
+#else
+
+/* Standard helper macros */
+
+#define FD_CLR(fd, set)   ((set)->fd_bits[(fd)/8]) &= ~(1 << ((fd) & 7))
+#define FD_SET(fd, set)   ((set)->fd_bits[(fd)/8]) |= (1 << ((fd) & 7))
+#define FD_ISSET(fd, set) ((set)->fd_bits[(fd)/8]) &  (1 << ((fd) & 7))
+#define FD_ZERO(set)      memset(set, 0, sizeof(fd_set))
 
 #endif							/* CONFIG_DISABLE_POLL */
 
@@ -143,9 +157,11 @@ extern "C" {
 
 /**
  * @ingroup SELECT_KERNEL
- * @brief  POSIX APIs (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
- * @details [SYSTEM CALL API]
- * @since Tizen RT v1.0
+ * @brief synchronous I/O multiplexing
+ * @details @b #include <sys/select.h> \n
+ * SYSTEM CALL API \n
+ * POSIX API (refer to : http://pubs.opengroup.org/onlinepubs/9699919799/)
+ * @since TizenRT v1.0
  */
 EXTERN int select(int nfds, FAR fd_set *readfds, FAR fd_set *writefds, FAR fd_set *exceptfds, FAR struct timeval *timeout);
 

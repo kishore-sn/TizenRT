@@ -340,8 +340,6 @@ void gdb_read_callback(const void *message, size_t len, void *data)
 		return;
 	}
 
-	/* Commented this as gdb framework is not required and black duck shows matches with Nuttx and GPL code. */
-	/* GDB framework removal requires more changes across driver and platform bring up procedure */
 	DEBUGASSERT(up_interrupt_context() == false);
 
 	if (mx_dev->filp) {
@@ -558,12 +556,9 @@ int mx_gdb_close(struct file *filp)
 	}
 
 	sem_post(&mx_dev->data_wait);
-	return OK;
-
 	filp->f_priv = NULL;
 	mx_dev->filp = NULL;
-
-	return 0;
+	return OK;
 }
 
 static const struct file_operations mx_gdb_fops = {

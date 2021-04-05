@@ -52,7 +52,7 @@
 */
 
 
-#include "liblwm2m.h"
+#include <protocols/liblwm2m.h>
 
 #include <string.h>
 #include <stdlib.h>
@@ -592,7 +592,7 @@ static void prv_create_client(char * buffer,
     {
         lwm2m_data_t * dataP;
 
-        if (1 != sscanf(buffer, "%d", &value))
+        if (1 != sscanf(buffer, "%"PRId64, &value))
         {
             fprintf(stdout, "Invalid value !");
             return;

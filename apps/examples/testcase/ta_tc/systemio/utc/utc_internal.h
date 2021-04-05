@@ -19,16 +19,12 @@
 /// @file tc_internal.h
 
 /// @brief Header file for System IO TestCase Example
-#ifndef __EXAMPLES_TESTCASE_SYSTEMIO_TC_INTERNAL_H
-#define __EXAMPLES_TESTCASE_SYSTEMIO_TC_INTERNAL_H
+#ifndef __EXAMPLES_TESTCASE_SYSTEMIO_UTC_INTERNAL_H
+#define __EXAMPLES_TESTCASE_SYSTEMIO_UTC_INTERNAL_H
 
-#define RETURN_ERR return
 //#define IS_PASS(value) value==1?"PASS":"FAIL"
 
 #include "tc_common.h"
-
-extern int total_pass;
-extern int total_fail;
 
 #define SYSIO_UTC_PRINT   printf
 #define SYSIO_UTC_UART_PRINT   printf
@@ -36,9 +32,10 @@ extern int total_fail;
 #define SYSIO_UTC_PWM_PRINT   printf
 #define SYSIO_UTC_I2C_PRINT   printf
 
-/**********************************************************
-* TC Function Declarations
-**********************************************************/
-char *Expect_Value(int, int);
+int utc_gpio_main(void);
+int utc_i2c_main(void);
+int utc_pwm_main(void);
+int utc_spi_main(void);
+int utc_uart_main(void);
 
-#endif							/* __EXAMPLES_TESTCASE_SYSTEMIO_TC_INTERNAL_H */
+#endif							/* __EXAMPLES_TESTCASE_SYSTEMIO_UTC_INTERNAL_H */

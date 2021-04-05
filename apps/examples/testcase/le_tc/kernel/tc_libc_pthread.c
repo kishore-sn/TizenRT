@@ -1253,6 +1253,7 @@ static void tc_libc_pthread_pthread_setcancelstate(void)
 
 	state = PTHREAD_CANCEL_DISABLE;
 	ret_chk = pthread_setcancelstate(state, &oldstate);
+	TC_ASSERT_EQ("pthread_setcancelstate", ret_chk, OK);
 	TC_ASSERT_EQ("pthread_setcancelstate", oldstate, PTHREAD_CANCEL_ENABLE);
 
 	TC_SUCCESS_RESULT();
@@ -1278,34 +1279,13 @@ static void tc_libc_pthread_pthread_setcanceltype(void)
 	int ret_chk;
 
 	type = PTHREAD_CANCEL_ASYNCHRONOUS;
-	oldtype = PTHREAD_CANCEL_DEFERRED;
 	ret_chk = pthread_setcanceltype(type, &oldtype);
 	TC_ASSERT_EQ("pthread_setcanceltype", ret_chk, OK);
-	TC_ASSERT_EQ("pthread_setcanceltype", oldtype, PTHREAD_CANCEL_ASYNCHRONOUS);
 
 	type = PTHREAD_CANCEL_DEFERRED;
 	ret_chk = pthread_setcanceltype(type, &oldtype);
 	TC_ASSERT_EQ("pthread_setcanceltype", ret_chk, ENOSYS);
 	TC_ASSERT_EQ("pthread_setcanceltype", oldtype, PTHREAD_CANCEL_ASYNCHRONOUS);
-
-	TC_SUCCESS_RESULT();
-}
-#endif
-
-/**
-* @fn                   :tc_libc_pthread_pthread_testcancel
-* @brief                :This tc tests pthread_testcancel()
-* @Scenario             :The function shall create a cancellation point in the calling thread
-*                        It has no effect if cancelability is disabled.
-* @API'scovered         :pthread_testcancel
-* @Preconditions        :none
-* @Postconditions       :none
-* @return               :void
-*/
-#ifndef CONFIG_CANCELLATION_POINTS
-static void tc_libc_pthread_pthread_testcancel(void)
-{
-	pthread_testcancel();
 
 	TC_SUCCESS_RESULT();
 }
@@ -1351,7 +1331,6 @@ int libc_pthread_main(void)
 	tc_libc_pthread_pthread_setcancelstate();
 #ifndef CONFIG_CANCELLATION_POINTS
 	tc_libc_pthread_pthread_setcanceltype();
-	tc_libc_pthread_pthread_testcancel();
 #endif
 
 	return 0;

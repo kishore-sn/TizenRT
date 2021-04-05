@@ -67,7 +67,10 @@
  * Included Files
  ************************************************************************/
 
+#include <tinyara/config.h>
+#ifndef NXFUSE_HOST_BUILD
 #include <tinyara/compiler.h>
+#endif
 
 /************************************************************************
  * Pre-processor Definitions
@@ -404,10 +407,18 @@
 #define EMEDIUMTYPE_STR     "Wrong medium type"
 #define ECANCELED           125
 #define ECANCELED_STR       "Operation cancelled"
-#define EINVAL_SECTOR       126
-#define EINVAL_SECTOR_STR   "Invalid sector"
+#define ENOKEY              126
+#define ENOKEY_STR          "Required key not available"
+#define EKEYEXPIRED         127
+#define EKEYEXPIRED_STR     "Key has expired"
+#define EKEYREVOKED         128
+#define EKEYREVOKED_STR     "Key has been revoked"
+#define EKEYREJECTED        129
+#define EKEYREJECTED_STR    "Key was rejected by service"
 #define EOWNERDEAD          142
 #define EOWNERDEAD_STR      "Previous owner died"
+#define ENOTSUP             252
+#define ENOTSUP_STR         "Not supported"
 
 /************************************************************************
  * Type Declarations
@@ -435,26 +446,29 @@ extern "C" {
 
 /**
  * @brief Return a pointer to the thread specific errno.
+ * @details @b #include <errno.h>
  * @return A pointer to the per-thread errno variable is returned.
- * @since Tizen RT v1.0
+ * @since TizenRT v1.0
  */
 FAR int *get_errno_ptr(void);
 
 #ifndef __DIRECT_ERRNO_ACCESS
 /**
  * @brief Set the value of the thread specific errno.
- * @details [SYSTEM CALL API]
+ * @details @b #include <errno.h> \n
+ * SYSTEM CALL API
  * @param[in] errcode The thread specific errno will be set to this error code value.
  * @return none
- * @since Tizen RT v1.0
+ * @since TizenRT v1.0
  */
 void set_errno(int errcode);
 
 /**
  * @brief Return the value of the thread specific errno.
- * @details [SYSTEM CALL API]
+ * @details @b #include <errno.h> \n
+ * SYSTEM CALL API
  * @return The current value of the thread specific errno is returned.
- * @since Tizen RT v1.0
+ * @since TizenRT v1.0
  */
 int get_errno(void);
 #endif

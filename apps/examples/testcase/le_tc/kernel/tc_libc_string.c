@@ -16,7 +16,7 @@
  *
  ****************************************************************************/
 
-/// @file libc_string.c
+/// @file tc_libc_string.c
 /// @brief Test Case Example for Libc String API
 
 /****************************************************************************
@@ -24,15 +24,23 @@
  ****************************************************************************/
 
 #include <tinyara/config.h>
+
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <signal.h>
+
+#include <tinyara/float.h>
+#include <tinyara/math.h>
+
 #include "tc_internal.h"
 
 #define BUFF_SIZE 5
 #define BUFF_SIZE_10 10
-#define BUFF_SIZE_12 12
+
+#define EBUSY_STR_SIZE (sizeof(EBUSY_STR))
 
 /****************************************************************************
  * Public Functions
@@ -55,7 +63,7 @@ static void tc_libc_string_memcpy(void)
 	char *res_ptr = NULL;
 
 	res_ptr = (char *)memcpy(sz_dest, sz_src, BUFF_SIZE);
-	TC_ASSERT_NOT_NULL("memcpy", res_ptr);
+	TC_ASSERT_NEQ("memcpy", res_ptr, NULL);
 	TC_ASSERT_EQ("memcpy", strncmp(sz_dest, res_ptr, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("memcpy", strncmp(sz_dest, sz_src, BUFF_SIZE), 0);
 
@@ -78,7 +86,7 @@ static void tc_libc_string_memset(void)
 	char *res_ptr = NULL;
 
 	res_ptr = (char *)memset(buffer, 'a', BUFF_SIZE - 1);
-	TC_ASSERT_NOT_NULL("memset", res_ptr);
+	TC_ASSERT_NEQ("memset", res_ptr, NULL);
 	TC_ASSERT_EQ("memset", strncmp(res_ptr, ctarget, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("memset", strncmp(ctarget, buffer, BUFF_SIZE), 0);
 
@@ -101,7 +109,7 @@ static void tc_libc_string_memchr(void)
 	char *res_ptr = NULL;
 
 	res_ptr = (char *)memchr(buffer, 's', BUFF_SIZE);
-	TC_ASSERT_NOT_NULL("memchr", res_ptr);
+	TC_ASSERT_NEQ("memchr", res_ptr, NULL);
 	TC_ASSERT_EQ("memchr", *res_ptr, 's');
 
 	TC_SUCCESS_RESULT();
@@ -154,12 +162,12 @@ static void tc_libc_string_memmove(void)
 	char *res_ptr = NULL;
 
 	res_ptr = (char *)memmove(buffer1, buffer2, sizeof(buffer1));
-	TC_ASSERT_NOT_NULL("memmove", res_ptr);
+	TC_ASSERT_NEQ("memmove", res_ptr, NULL);
 	TC_ASSERT_EQ("memmove", strncmp(res_ptr, buffer2, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("memmove", strncmp(buffer1, buffer2, BUFF_SIZE), 0);
 
 	res_ptr = (char *)memmove(buffer2, buffer1, sizeof(buffer1));
-	TC_ASSERT_NOT_NULL("memmove", res_ptr);
+	TC_ASSERT_NEQ("memmove", res_ptr, NULL);
 	TC_ASSERT_EQ("memmove", strncmp(res_ptr, buffer1, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("memmove", strncmp(buffer2, buffer1, BUFF_SIZE), 0);
 
@@ -183,7 +191,7 @@ static void tc_libc_string_stpcpy(void)
 	char *res_ptr = NULL;
 
 	res_ptr = stpcpy(dest_arr, src_buf);
-	TC_ASSERT_NOT_NULL("stpcpy", res_ptr);
+	TC_ASSERT_NEQ("stpcpy", res_ptr, NULL);
 	TC_ASSERT_EQ("stpcpy", *(res_ptr - 1), 'd');
 	TC_ASSERT_EQ("stpcpy", strncmp(dest_arr, src, BUFF_SIZE), 0);
 
@@ -236,7 +244,7 @@ static void tc_libc_string_strcat(void)
 	char *res_ptr = NULL;
 
 	res_ptr = strcat(dest_arr, src);
-	TC_ASSERT_NOT_NULL("strcat", res_ptr);
+	TC_ASSERT_NEQ("strcat", res_ptr, NULL);
 	TC_ASSERT_EQ("strcat", strncmp(res_ptr, final_arr, BUFF_SIZE_10), 0);
 	TC_ASSERT_EQ("strcat", strncmp(dest_arr, final_arr, BUFF_SIZE_10), 0);
 
@@ -261,7 +269,7 @@ static void tc_libc_string_strchr(void)
 	TC_ASSERT_EQ("strchr", res_ptr, NULL);
 
 	res_ptr = strchr(dest_arr, 's');
-	TC_ASSERT_NOT_NULL("strchr", res_ptr);
+	TC_ASSERT_NEQ("strchr", res_ptr, NULL);
 	TC_ASSERT_EQ("strchr", *res_ptr, 's');
 
 	TC_SUCCESS_RESULT();
@@ -313,7 +321,7 @@ static void tc_libc_string_strcpy(void)
 	char *res_ptr = NULL;
 
 	res_ptr = strcpy(dest_arr, src);
-	TC_ASSERT_NOT_NULL("strcpy", res_ptr);
+	TC_ASSERT_NEQ("strcpy", res_ptr, NULL);
 	TC_ASSERT_EQ("strcpy", strncmp(res_ptr, src, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("strcpy", strncmp(dest_arr, src, BUFF_SIZE), 0);
 
@@ -367,7 +375,7 @@ static void tc_libc_string_strdup(void)
 	char src[BUFF_SIZE] = "test";
 
 	dest_arr = strdup(src);
-	TC_ASSERT_NOT_NULL("strdup", dest_arr);
+	TC_ASSERT_NEQ("strdup", dest_arr, NULL);
 	TC_ASSERT_EQ_CLEANUP("strdup",
 						 strncmp(dest_arr, src, BUFF_SIZE), OK,
 						 TC_FREE_MEMORY(dest_arr));
@@ -376,6 +384,7 @@ static void tc_libc_string_strdup(void)
 	TC_SUCCESS_RESULT();
 }
 
+#ifdef CONFIG_LIBC_STRERROR
 /**
 * @fn                   :tc_libc_string_strerror
 * @brief                :Interprets the value of errnum, generating a string with a message that describes the error.
@@ -389,15 +398,15 @@ static void tc_libc_string_strdup(void)
 static void tc_libc_string_strerror(void)
 {
 	char *dest_arr = NULL;
-	char src[BUFF_SIZE_12] = "Bad address";
 
 	/* EFAULT is defined as 14 which gives Bad address in strerror */
 	dest_arr = (char *)strerror(EFAULT);
-	TC_ASSERT_NOT_NULL("strerror", dest_arr);
-	TC_ASSERT_EQ("strerror", strncmp(dest_arr, src, BUFF_SIZE_12), 0);
+	TC_ASSERT_NEQ("strerror", dest_arr, NULL);
+	TC_ASSERT_EQ("strerror", strncmp(dest_arr, EFAULT_STR, sizeof(EFAULT_STR)), 0);
 
 	TC_SUCCESS_RESULT();
 }
+#endif
 
 /**
 * @fn                   :tc_libc_string_strlen
@@ -467,7 +476,7 @@ static void tc_libc_string_strncat(void)
 	char *res_ptr = NULL;
 
 	res_ptr = strncat(dest_arr, src, BUFF_SIZE);
-	TC_ASSERT_NOT_NULL("strncat", res_ptr);
+	TC_ASSERT_NEQ("strncat", res_ptr, NULL);
 	TC_ASSERT_EQ("strncat", strncmp(res_ptr, final_arr, BUFF_SIZE_10), 0);
 	TC_ASSERT_EQ("strncat", strncmp(dest_arr, final_arr, BUFF_SIZE_10), 0);
 
@@ -519,7 +528,7 @@ static void tc_libc_string_strncpy(void)
 	char *res_ptr = NULL;
 
 	res_ptr = strncpy(dest_arr, src, BUFF_SIZE);
-	TC_ASSERT_NOT_NULL("strncpy", res_ptr);
+	TC_ASSERT_NEQ("strncpy", res_ptr, NULL);
 	TC_ASSERT_EQ("strncpy", strncmp(res_ptr, src, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("strncpy", strncmp(dest_arr, src, BUFF_SIZE), 0);
 
@@ -543,7 +552,7 @@ static void tc_libc_string_strndup(void)
 	char src[BUFF_SIZE] = "test";
 
 	dest_arr = strndup(src, BUFF_SIZE);
-	TC_ASSERT_NOT_NULL("strndup", dest_arr);
+	TC_ASSERT_NEQ("strndup", dest_arr, NULL);
 	TC_ASSERT_EQ_CLEANUP("strndup",
 						 strncmp(dest_arr, src, BUFF_SIZE), 0,
 						 TC_FREE_MEMORY(dest_arr));
@@ -598,7 +607,7 @@ static void tc_libc_string_strpbrk(void)
 	char *res_ptrstr = "mple";
 
 	res_ptr = strpbrk(dest_arr, cbuf);
-	TC_ASSERT_NOT_NULL("strpbrk", res_ptr);
+	TC_ASSERT_NEQ("strpbrk", res_ptr, NULL);
 	TC_ASSERT_EQ("strpbrk", strncmp(res_ptr, res_ptrstr, BUFF_SIZE_10), 0);
 	TC_ASSERT_EQ("strpbrk", *res_ptr, 'm');
 
@@ -625,7 +634,7 @@ static void tc_libc_string_strrchr(void)
 	char *res_ptrstr = "es";
 
 	res_ptr = strrchr(dest_arr, 'e');
-	TC_ASSERT_NOT_NULL("strrchr", res_ptr);
+	TC_ASSERT_NEQ("strrchr", res_ptr, NULL);
 	TC_ASSERT_EQ("strrchr", strncmp(res_ptr, res_ptrstr, BUFF_SIZE), 0);
 	TC_ASSERT_EQ("strrchr", *res_ptr, 'e');
 
@@ -681,12 +690,12 @@ static void tc_libc_string_strstr(void)
 	char *psz = "str";
 
 	res_ptr = strstr(dest_arr, psz);
-	TC_ASSERT_NOT_NULL("strstr", res_ptr);
+	TC_ASSERT_NEQ("strstr", res_ptr, NULL);
 	TC_ASSERT_EQ("strstr", strncmp(res_ptr, dest_arr, BUFF_SIZE_10), 0);
 
 	psz = "test";
 	res_ptr = strstr(dest_arr, psz);
-	TC_ASSERT_NOT_NULL("strstr", res_ptr);
+	TC_ASSERT_NEQ("strstr", res_ptr, NULL);
 	TC_ASSERT_EQ("strstr", strncmp(res_ptr, dest_arr + 4, BUFF_SIZE_10), 0);
 
 	psz = "notfound";
@@ -695,7 +704,7 @@ static void tc_libc_string_strstr(void)
 
 	psz = "";
 	res_ptr = strstr(dest_arr, psz);
-	TC_ASSERT_NOT_NULL("strstr", res_ptr);
+	TC_ASSERT_NEQ("strstr", res_ptr, NULL);
 	TC_ASSERT_EQ("strstr", strncmp(res_ptr, dest_arr, BUFF_SIZE_10), 0);
 
 	TC_SUCCESS_RESULT();
@@ -720,7 +729,7 @@ static void tc_libc_string_strtok(void)
 	int arr_idx = 0;
 	char *res_ptr = NULL;
 	res_ptr = strtok(szbuffer, " ");
-	TC_ASSERT_NOT_NULL("strtok", res_ptr);
+	TC_ASSERT_NEQ("strtok", res_ptr, NULL);
 
 	while (res_ptr != NULL) {
 		TC_ASSERT_EQ("strtok", strncmp(res_ptr, dest_arr[arr_idx], BUFF_SIZE_10), 0);
@@ -753,8 +762,8 @@ static void tc_libc_string_strtok_r(void)
 	char *psz_save;
 
 	res_ptr = strtok_r(cbuf, " ", &psz_save);
-	TC_ASSERT_NOT_NULL("strtok_r", res_ptr);
-	TC_ASSERT_NOT_NULL("strtok_r", psz_save);
+	TC_ASSERT_NEQ("strtok_r", res_ptr, NULL);
+	TC_ASSERT_NEQ("strtok_r", psz_save, NULL);
 
 	while (res_ptr != NULL) {
 		TC_ASSERT_EQ("strtok_r", strncmp(res_ptr, dest_arr[arr_idx], BUFF_SIZE_10), 0);
@@ -785,12 +794,12 @@ static void tc_libc_string_strcasestr(void)
 	char *psz = "str";
 
 	res_ptr = strcasestr(dest_arr, psz);
-	TC_ASSERT_NOT_NULL("strcasestr", res_ptr);
+	TC_ASSERT_NEQ("strcasestr", res_ptr, NULL);
 	TC_ASSERT_EQ("strcasestr", strncmp(res_ptr, dest_arr, BUFF_SIZE_10), 0);
 
 	psz = "test";
 	res_ptr = strcasestr(dest_arr, psz);
-	TC_ASSERT_NOT_NULL("strcasestr", res_ptr);
+	TC_ASSERT_NEQ("strcasestr", res_ptr, NULL);
 	TC_ASSERT_EQ("strcasestr", strncmp(res_ptr, dest_arr + 4, BUFF_SIZE_10), 0);
 
 	psz = "notfound";
@@ -799,7 +808,7 @@ static void tc_libc_string_strcasestr(void)
 
 	psz = "";
 	res_ptr = strcasestr(dest_arr, psz);
-	TC_ASSERT_NOT_NULL("strcasestr", res_ptr);
+	TC_ASSERT_NEQ("strcasestr", res_ptr, NULL);
 	TC_ASSERT_EQ("strcasestr", strncmp(res_ptr, dest_arr, BUFF_SIZE_10), 0);
 
 	TC_SUCCESS_RESULT();
@@ -815,7 +824,7 @@ static void tc_libc_string_memccpy(void)
 	memset(some_str, 0, sizeof(some_str));
 
 	res_ptr = (char *)memccpy(some_str, test1_src, 'g', strlen(test1_src));
-	TC_ASSERT_NOT_NULL("memccpy", res_ptr);
+	TC_ASSERT_NEQ("memccpy", res_ptr, NULL);
 	TC_ASSERT_EQ("memccpy", strcmp(some_str, test_result), 0);
 
 	TC_SUCCESS_RESULT();
@@ -848,6 +857,143 @@ static void tc_libc_string_strlcpy(void)
 
 	TC_SUCCESS_RESULT();
 }
+/**
+* @fn                   :tc_libc_string_strtof
+* @brief                :convert the string to float value
+* @Scenario             :put string to strtof and check the return which points the string value
+* API's covered         :strtof
+* Preconditions         :none
+* Postconditions        :none
+* @return               :void
+*/
+static void tc_libc_string_strtof(void)
+{
+	char *str;
+	char *ptr;
+	float value;
+
+	str = "123.456TizenRT";
+	value = strtof(str, &ptr);
+#ifdef CONFIG_LIBM
+	TC_ASSERT_LEQ("strtof", roundf((fabsf(value - 123.456f) * 1000) / 1000), FLT_EPSILON);
+#endif
+	TC_ASSERT_EQ("strtof", strncmp(ptr, "TizenRT", strlen("TizenRT")), 0);
+
+	str = "-78.9123TinyAra";
+	value = strtof(str, &ptr);
+#ifdef CONFIG_LIBM
+	TC_ASSERT_LEQ("strtof", roundf((fabsf(value - (-78.9123f)) * 10000) / 10000), FLT_EPSILON);
+#endif
+	TC_ASSERT_EQ("strtof", strncmp(ptr, "TinyAra", strlen("TinyAra")), 0);
+
+	TC_SUCCESS_RESULT();
+}
+/**
+* @fn                   :tc_libc_string_strtold
+* @brief                :convert the string to long double value
+* @Scenario             :put string to strtold and check the return which points the string value
+* API's covered         :strtold
+* Preconditions         :none
+* Postconditions        :none
+* @return               :void
+*/
+static void tc_libc_string_strtold(void)
+{
+	char *str;
+	char *ptr;
+	long double value;
+
+	str = "123.456TizenRT";
+	value = strtold(str, &ptr);
+#ifdef CONFIG_LIBM
+	TC_ASSERT_LEQ("strtold", roundl((fabsl(value - 123.456) * 1000) / 1000), DBL_EPSILON);
+#endif
+	TC_ASSERT_EQ("strtold", strncmp(ptr, "TizenRT", strlen("TizenRT")), 0);
+
+	str = "-78.9123TinyAra";
+	value = strtold(str, &ptr);
+#ifdef CONFIG_LIBM
+	TC_ASSERT_LEQ("strtold", roundl((fabsl(value - (-78.9123)) * 10000) / 10000), DBL_EPSILON);
+#endif
+	TC_ASSERT_EQ("strtold", strncmp(ptr, "TinyAra", strlen("TinyAra")), 0);
+
+	TC_SUCCESS_RESULT();
+}
+#ifdef CONFIG_LIBC_STRERROR
+/**
+* @fn                   :tc_libc_string_strerror_r
+* @brief                :convert the error number to string
+* @Scenario             :put error number to strerror_r and check the return which points the string value
+* API's covered         :
+* Preconditions         :none
+* Postconditions        :none
+* @return               :void
+*/
+static void tc_libc_string_strerror_r(void)
+{
+	char dest_arr[EBUSY_STR_SIZE];
+	int ret;
+
+	ret = strerror_r(EBUSY, dest_arr, EBUSY_STR_SIZE);
+	TC_ASSERT_EQ("strerror_r", ret, OK);
+	TC_ASSERT_EQ("strerror_r", strncmp(dest_arr, EBUSY_STR, EBUSY_STR_SIZE), 0);
+
+	TC_SUCCESS_RESULT();
+}
+#endif
+#ifndef CONFIG_DISABLE_SIGNALS
+/**
+* @fn                   :tc_libc_string_strsignal
+* @brief                :convert the signal number to string
+* @Scenario             :put signal number to strerror_r and check the return which points the string value
+* API's covered         :
+* Preconditions         :none
+* Postconditions        :none
+* @return               :void
+*/
+static void tc_libc_string_strsignal(void)
+{
+	char *dest_arr = NULL;
+
+	dest_arr = strsignal(MAX_SIGNO + 1);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "Invalid Signal", sizeof("Invalid Signal")), 0);
+
+	dest_arr = strsignal(MIN_SIGNO);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "Signal 0", sizeof("Signal 0")), 0);
+
+#ifdef SIGUSR2
+	dest_arr = strsignal(SIGUSR2);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "SIGUSR2", sizeof("SIGUSR2")), 0);
+#endif
+
+#ifdef SIGALRM
+	dest_arr = strsignal(SIGALRM);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "SIGALRM", sizeof("SIGALRM")), 0);
+#endif
+
+#ifdef SIGCHLD
+	dest_arr = strsignal(SIGCHLD);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "SIGCHLD", sizeof("SIGCHLD")), 0);
+#endif
+
+#ifdef SIGKILL
+	dest_arr = strsignal(SIGKILL);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "SIGKILL", sizeof("SIGKILL")), 0);
+#endif
+
+#ifdef SIGCONDTIMEDOUT
+	dest_arr = strsignal(SIGCONDTIMEDOUT);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "SIGCONDTIMEDOUT", sizeof("SIGCONDTIMEDOUT")), 0);
+#endif
+
+#ifdef SIGWORK
+	dest_arr = strsignal(SIGWORK);
+	TC_ASSERT_EQ("strsignal", strncmp(dest_arr, "SIGWORK", sizeof("SIGWORK")), 0);
+#endif
+
+	TC_SUCCESS_RESULT();
+}
+#endif
 
 /****************************************************************************
  * Name: libc_string
@@ -868,7 +1014,10 @@ int libc_string_main(void)
 	tc_libc_string_strcpy();
 	tc_libc_string_strcspn();
 	tc_libc_string_strdup();
+#ifdef CONFIG_LIBC_STRERROR
 	tc_libc_string_strerror();
+	tc_libc_string_strerror_r();
+#endif
 	tc_libc_string_strlen();
 	tc_libc_string_strncasecmp();
 	tc_libc_string_strncat();
@@ -878,6 +1027,9 @@ int libc_string_main(void)
 	tc_libc_string_strnlen();
 	tc_libc_string_strpbrk();
 	tc_libc_string_strrchr();
+#ifndef CONFIG_DISABLE_SIGNALS
+	tc_libc_string_strsignal();
+#endif
 	tc_libc_string_strspn();
 	tc_libc_string_strstr();
 	tc_libc_string_strtok();
@@ -885,6 +1037,8 @@ int libc_string_main(void)
 	tc_libc_string_strcasestr();
 	tc_libc_string_memccpy();
 	tc_libc_string_strlcpy();
+	tc_libc_string_strtof();
+	tc_libc_string_strtold();
 
 	return 0;
 }

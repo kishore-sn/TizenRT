@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright 2016 Samsung Electronics All Rights Reserved.
+ * Copyright 2017 Samsung Electronics All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@
  *
  ****************************************************************************/
 
+#include <unistd.h>
 #include <fcntl.h>
 #include <tinyara/pwm.h>
 
@@ -63,9 +64,31 @@ void ledpwm_main(int argc, char *argv[])
 	struct pwm_info_s pwm_info;
 
 	fd1 = open("/dev/pwm0", O_RDWR);
+	if (fd1 < 0) {
+		printf("fd open fail\n");
+		return;
+	}
 	fd2 = open("/dev/pwm3", O_RDWR);
+	if (fd2 < 0) {
+		printf("fd open fail\n");
+		close(fd1);
+		return;
+	}
 	fd3 = open("/dev/pwm4", O_RDWR);
+	if (fd3 < 0) {
+		printf("fd open fail\n");
+		close(fd1);
+		close(fd2);
+		return;
+	}
 	fd4 = open("/dev/pwm5", O_RDWR);
+	if (fd4 < 0) {
+		printf("fd open fail\n");
+		close(fd1);
+		close(fd2);
+		close(fd3);
+		return;
+	}
 	pwm_info.frequency = 1000;
 
 	for (i = 0; i < 100; i = i + 3) {
@@ -83,10 +106,10 @@ void ledpwm_main(int argc, char *argv[])
 		ioctl(fd3, PWMIOC_START);
 		ioctl(fd4, PWMIOC_START);
 
-		up_mdelay(200);
+		usleep(200000);
 	}
 
-	up_mdelay(2000);
+	sleep(2);
 	ioctl(fd1, PWMIOC_STOP);
 	ioctl(fd2, PWMIOC_STOP);
 	ioctl(fd3, PWMIOC_STOP);

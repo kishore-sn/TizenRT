@@ -134,7 +134,7 @@ static char *alloc_tracebuffer(int size)
 {
 	char *bp = (char *)malloc(size * sizeof(char));
 	if (bp == NULL) {
-		printf("Failed to zalloc buffer in ttrace\r\n");
+		printf("Failed to malloc buffer in ttrace\r\n");
 	}
 	return bp;
 }
@@ -171,6 +171,7 @@ static int read_tracebuffer(FILE *file, int bufsize)
 
 	read_len = fread(buffer, sizeof(char), bufsize, file);
 	if (read_len < 0) {
+		free_tracebuffer(buffer);
 		return INVALID;
 	}
 
@@ -198,6 +199,7 @@ int main(int argc, char **args)
 
 	filesize = get_dumpsize(file);
 	if (filesize <= 0) {
+		close_dump(file);
 		return INVALID;
 	}
 

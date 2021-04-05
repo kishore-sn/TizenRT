@@ -27,7 +27,6 @@
  * @brief device management APIs for DM
  */
 
-#include "dm_lwm2m.h"
 #include "lwm2mclient.h"
 #include "connectivity_interface.h"
 #include "internals.h"
@@ -35,8 +34,8 @@
 #include <sched.h>
 #include <sys/types.h>
 
-#include "dm_lwm2m.h"
-#include "dm_error.h"
+#include <dm/dm_lwm2m.h>
+#include <dm/dm_error.h>
 
 static pthread_t wakaama_thread;
 static pthread_attr_t wakaama_attr;
@@ -243,7 +242,7 @@ int dm_lwm2m_get_client_state(dm_lwm2m_client_state_e *state)
  *
  * @return     On success, 0 is returned.
  *             On failure, a negative value is returned.
- * @since Tizen RT v1.0
+ * @since TizenRT v1.0
  */
 int dm_lwm2m_display_client_resource(char *buffer)
 {

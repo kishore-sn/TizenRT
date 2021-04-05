@@ -66,7 +66,7 @@
  * Public Data
  ****************************************************************************/
 
-char line[LINESIZE + 1];
+static char line[LINESIZE + 1];
 
 /****************************************************************************
  * Private Data
@@ -84,12 +84,6 @@ static const char *dequote_list[] = {
 	"CONFIG_PASS1_TARGET",		/* Pass1 build target */
 	"CONFIG_PASS1_OBJECT",		/* Pass1 build object */
 	"CONFIG_DEBUG_OPTLEVEL",	/* Custom debug level */
-	"CONFIG_INIT_SYMTAB",		/* Global symbol table */
-	"CONFIG_INIT_NEXPORTS",		/* Global symbol table size */
-
-	/* RGMP */
-
-	"CONFIG_RGMP_SUBARCH",		/* RGMP sub-architecture */
 
 	/* apps/ definitions */
 
@@ -271,6 +265,11 @@ static char *dequote_value(const char *varname, char *varval)
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+char *get_line_ptr(void)
+{
+	return line;
+}
 
 void generate_definitions(FILE * stream)
 {

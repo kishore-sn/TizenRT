@@ -60,6 +60,7 @@ include $(APPDIR)/Make.defs
 # built-in application info
 
 APPNAME = wave_gen
+FUNCNAME = $(APPNAME)_main
 THREADEXEC = TASH_EXECMD_ASYNC
 
 
@@ -129,11 +130,11 @@ install:
 
 endif
 
-ifeq ($(CONFIG_BUILTIN_APPS)$(CONFIG_EXAMPLE_WAVE_GEN),yy)
-$(BUILTIN_REGISTRY)$(DELIM)$(APPNAME)_main.bdat: $(DEPCONFIG) Makefile
-	$(call REGISTER,$(APPNAME),$(APPNAME)_main,$(THREADEXEC))
+ifeq ($(CONFIG_BUILTIN_APPS)$(CONFIG_EXAMPLES_WAVE_GEN),yy)
+$(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat: $(DEPCONFIG) Makefile
+	$(call REGISTER,$(APPNAME),$(FUNCNAME),$(THREADEXEC))
 
-context: $(BUILTIN_REGISTRY)$(DELIM)$(APPNAME)_main.bdat
+context: $(BUILTIN_REGISTRY)$(DELIM)$(FUNCNAME).bdat
 
 else
 context:

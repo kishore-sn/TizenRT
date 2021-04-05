@@ -16,7 +16,7 @@
  *
  ****************************************************************************/
 /************************************************************************************
- * arch/arm/src/sama5/sam_ssc.h
+ * arch/arm/src/s5j/s5j_i2s.h
  *
  *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
@@ -50,8 +50,8 @@
  *
  ************************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_S5JT200_S5J_I2S_H
-#define __ARCH_ARM_SRC_S5JT200_S5J_I2S_H
+#ifndef __ARCH_ARM_SRC_S5J_I2S_H
+#define __ARCH_ARM_SRC_S5J_I2S_H
 
 /************************************************************************************
  * Included Files
@@ -104,14 +104,14 @@ extern "C" {
  *   Initialize the selected I2S port.
  *
  * Input Parameter:
- *   Port number (for hardware that has mutiple I2S interfaces)
+ *   Port number (for hardware that has multiple I2S interfaces)
  *
  * Returned Value:
  *   Valid I2S device structure reference on succcess; a NULL on failure
  *
  ****************************************************************************/
 
-FAR struct i2s_dev_s *s5j_i2s_initialize(void);
+FAR struct i2s_dev_s *s5j_i2s_initialize(uint16_t port);
 
 #undef EXTERN
 #if defined(__cplusplus)
@@ -119,4 +119,4 @@ FAR struct i2s_dev_s *s5j_i2s_initialize(void);
 #endif
 
 #endif							/* __ASSEMBLY__ */
-#endif							/* __ARCH_ARM_SRC_S5JT200_S5J_I2S_H */
+#endif							/* __ARCH_ARM_SRC_S5J_I2S_H */
