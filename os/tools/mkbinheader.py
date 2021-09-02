@@ -43,15 +43,19 @@ def roundup_power_two(size):
     return size
 
 def get_config_value(file_name, config):
-    with open(file_name, 'r+') as f:
-        lines = f.readlines()
-	found = False
-	value = -1
-	for line in lines:
-		if config in line:
-			value = int(line.split("=")[1])
-			break		
-	return value;
+    with open(file_name, 'r+') as fp:
+        lines = fp.readlines()
+        found = False
+        for line in lines:
+            if config in line:
+                value = (line.split("=")[1])
+                value = value.replace('"','').replace('\n','')
+                found = True
+                break
+    if found == False:
+        print ("FAIL!! No found config %s" %config)
+        sys.exit(1)
+    return int(value);
 
 def check_optimize_config(file_name):
     with open(file_name, 'r+') as f:
@@ -135,9 +139,9 @@ def make_kernel_binary_header():
     header_size = SIZE_OF_HEADERSIZE + SIZE_OF_BINVER + SIZE_OF_BINSIZE + SIZE_OF_SECURE_HEADER_SIZE
 
     # Get binary version
-    bin_ver = get_config_value(cfg_path, "CONFIG_BINARY_VERSION=")
+    bin_ver = get_config_value(cfg_path, "CONFIG_BOARD_BUILD_DATE=")
     if bin_ver < 0 :
-        print("Error : Not Found config for version, CONFIG_BINARY_VERSION")
+        print("Error : Not Found config for version, CONFIG_BOARD_BUILD_DATE")
         sys.exit(1)
     elif bin_ver < 101 or bin_ver > 991231 :
         print("Error : Invalid value. It has 'YYMMDD' format so it should be in (101, 991231)")
@@ -291,9 +295,9 @@ def make_user_binary_header():
             binary_ram_size = roundup_power_two(binary_ram_size)
 
         # Get kernel binary version
-        kernel_ver = get_config_value(cfg_path, "CONFIG_BINARY_VERSION=")
+        kernel_ver = get_config_value(cfg_path, "CONFIG_BOARD_BUILD_DATE=")
         if kernel_ver < 0 :
-            print("Error : Not Found config for kernel version, CONFIG_BINARY_VERSION")
+            print("Error : Not Found config for kernel version, CONFIG_BOARD_BUILD_DATE")
             sys.exit(1)
         elif kernel_ver < 101 or kernel_ver > 991231 :
             print("Error : Invalid value. It has 'YYMMDD' format so it should be in (101, 991231)")

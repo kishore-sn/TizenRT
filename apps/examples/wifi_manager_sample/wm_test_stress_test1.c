@@ -23,22 +23,21 @@
 #include <wifi_manager/wifi_manager.h>
 #include <stress_tool/st_perf.h>
 #include "wm_test.h"
+#include "wm_test_log.h"
 
-/*
- * Macro
- */
+/* Macro*/
 #define WM_TEST_TRIAL	   CONFIG_WIFIMANAGER_TEST_TRIAL
+#define TAG "[WTS1]"
 
 static char *WM_AP_SSID;
 static char *WM_AP_PASSWORD;
 static wifi_manager_ap_auth_type_e WM_AP_AUTH;
 static wifi_manager_ap_crypto_type_e WM_AP_CRYPTO;
 
-
 #define WM_TEST_SIGNAL										\
 	do {													\
 		pthread_mutex_lock(&g_wm_mutex);					\
-		printf("T%d send signal\n", getpid());	\
+		WT_LOG(TAG, "send signal");	\
 		pthread_cond_signal(&g_wm_cond);					\
 		pthread_mutex_unlock(&g_wm_mutex);					\
 	} while (0)
@@ -46,42 +45,56 @@ static wifi_manager_ap_crypto_type_e WM_AP_CRYPTO;
 #define WM_TEST_WAIT								\
 	do {											\
 		pthread_mutex_lock(&g_wm_mutex);			\
-		printf(" T%d wait signal\n", getpid());		\
+		WT_LOG(TAG, "wait signal");		\
 		pthread_cond_wait(&g_wm_cond, &g_wm_mutex);	\
 		pthread_mutex_unlock(&g_wm_mutex);			\
 	} while (0)
 
-/*
- * callbacks
- */
+/* callbacks*/
 static void wm_sta_connected(wifi_manager_result_e);
 static void wm_sta_disconnected(wifi_manager_disconnect_e);
+static void wm_softap_sta_joined(void);
+static void wm_softap_sta_left(void);
+static void wm_scan_ap_done(wifi_manager_scan_info_s **, wifi_manager_scan_result_e);
 
-/*
- * Global
- */
+/* Global*/
 static wifi_manager_cb_s g_wifi_callbacks = {
 	wm_sta_connected,
 	wm_sta_disconnected,
-	NULL, NULL, NULL
+	wm_softap_sta_joined,
+	wm_softap_sta_left,
+	wm_scan_ap_done
 };
 
-static pthread_mutex_t g_wm_mutex = PTHREAD_MUTEX_INITIALIZER;;
+static pthread_mutex_t g_wm_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_wm_cond = PTHREAD_COND_INITIALIZER;
 
-/*
- * Callback
- */
 void wm_sta_connected(wifi_manager_result_e res)
 {
-	printf(" T%d --> %s res(%d)\n", getpid(), __FUNCTION__, res);
+	WT_LOG(TAG, "--> res(%d)", res);
 	WM_TEST_SIGNAL;
 }
 
 void wm_sta_disconnected(wifi_manager_disconnect_e disconn)
 {
-	printf(" T%d --> %s\n", getpid(), __FUNCTION__);
+	WT_LOG(TAG, "-->");
 	WM_TEST_SIGNAL;
+}
+
+void wm_softap_sta_joined(void)
+{
+	WT_LOG(TAG, "-->");
+}
+
+void wm_softap_sta_left(void)
+{
+	WT_LOG(TAG, "-->");
+}
+
+void wm_scan_ap_done(wifi_manager_scan_info_s **info, wifi_manager_scan_result_e res)
+{
+	WT_LOG(TAG, "-->");
+	WT_LOG(TAG, " result (%d) info pointer(%p)", res, *info);
 }
 
 static void wm_get_apinfo(wifi_manager_ap_config_s *apconfig)
@@ -212,7 +225,7 @@ TEST_SETUP(scan)
 	ST_START_TEST;
 
 	ST_EXPECT_EQ(WIFI_MANAGER_SUCCESS, wifi_manager_init(&g_wifi_callbacks));
-	ST_EXPECT_EQ(WIFI_MANAGER_SUCCESS, wifi_manager_scan_ap());
+	ST_EXPECT_EQ(WIFI_MANAGER_SUCCESS, wifi_manager_scan_ap(NULL));
 
 	ST_END_TEST;
 }
@@ -230,7 +243,7 @@ TEST_F(scan)
 	ST_END_TEST;
 }
 
-void wm_run_stress_test1(struct options *opt)
+void wm_run_stress_test1(struct wt_options *opt)
 {
 	WM_AP_SSID = opt->ssid;
 	WM_AP_PASSWORD = opt->password;

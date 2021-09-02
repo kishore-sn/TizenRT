@@ -35,13 +35,21 @@ FP = 11
 SP = 13
 LR = 14
 PC = 15
-g_stext=0
-g_etext=0
+
+# Variable to check if board has kernel text in RAM region
+have_ram_kernel_text = False
+
+# Kernel text start & end addresses in FLASH & RAM regions
+g_stext_flash=0
+g_etext_flash=0
+g_stext_ram=0
+g_etext_ram=0
 
 config_path = '../../os/.config'
 elf_path = '../../build/output/bin/tinyara'
 debug_cmd = 'addr2line'
 file_data = 'HeapInfo'
+heapinfo_path = '../../os/include/tinyara/mm/heapinfo_internal.h'
 
 # Top level class to parse the dump and assert logs parsing feature
 class dumpParser:
@@ -196,12 +204,18 @@ class dumpParser:
 							print(' ')
 							print(' ')
 
-						# If the PC is not withing RAM range, it's a Prefetch issue
+						# If the PC is not within kernel text range, it's a Prefetch issue
 						# So, fill the PC with LR and help to get the call stack
-						if ( pc < g_stext or pc > g_etext):
-							print("It'S A PRE-FETCH ABORT @ PC", hex(pc))
-							# Assign LR to PC to help constructing the stack
-							pc = lr
+						if (not(pc >= g_stext_flash and pc <= g_etext_flash)):
+							if (have_ram_kernel_text):
+								if (not(pc >= g_stext_ram and pc <= g_etext_ram)):
+									print("It'S A PRE-FETCH ABORT @ PC", hex(pc))
+									# Assign LR to PC to help constructing the stack
+									pc = lr
+							else:
+								print("It'S A PRE-FETCH ABORT @ PC", hex(pc))
+								# Assign LR to PC to help constructing the stack
+								pc = lr
 
 					continue
 				# Incase if log file already has this data, address to symbol mapping is
@@ -261,22 +275,31 @@ class dumpParser:
 
 	# Function to read the contents of given length from specific RAM/ELF address
 	def read_address(self, addr, length, debug=False):
-		# First check whether address falls within the code section, if so read from elf
-		if (addr >= g_stext and addr <= g_etext):
-			if debug:
-				print(('address {0:x} is in text range'.format(addr)))
-			# Checking in ELF file once for the offset at which we need to read the address
-			offset = (addr - g_stext ) + int(self.text_offset, 16)
-			if debug:
-				print(('Offset = {0:x}'.format(offset)))
-				print(('Length = {0:x}'.format(length)))
-			self.elf_file_fd.seek(offset)
-			a = self.elf_file_fd.read(length)
-			return a
-		# Since the given address does not belong to ELF section, read from DUMP
-		else:
-			# Calculate the OFFSET in the FILE by subtracting RAM start address
-			offset = addr - self.ram_base_addr
+		global have_ram_kernel_text
+
+		# If the given address does not belong to ELF section, read from DUMP
+		# Calculate the OFFSET in the FILE by subtracting RAM start address
+		offset = addr - self.ram_base_addr
+
+		# Also check whether address falls within the code section, if so read from elf
+		if (have_ram_kernel_text):
+			if (addr >= g_stext_flash and addr <= g_etext_flash) or (addr >= g_stext_ram and addr <= g_etext_ram):
+				# Checking in ELF file once for the offset at which we need to read the address
+				offset = (addr - g_stext_ram) + int(self.text_offset, 16)
+				if debug:
+					print(('address {0:x} is in text range'.format(addr)))
+				self.elf_file_fd.seek(offset)
+				a = self.elf_file_fd.read(length)
+				return a
+		elif not(have_ram_kernel_text):
+			if (addr >= g_stext_flash and addr <= g_etext_flash):
+				# Checking in ELF file once for the offset at which we need to read the address
+				offset = (addr - g_stext_flash) + int(self.text_offset, 16)
+				if debug:
+					print(('address {0:x} is in text range'.format(addr)))
+				self.elf_file_fd.seek(offset)
+				a = self.elf_file_fd.read(length)
+				return a
 
 		if debug:
 			print('offset = {0:x}'.format(offset))
@@ -525,6 +548,7 @@ def main():
 	stackPointer = 0
 	programCounter = 0
 	stackSize = 0
+	have_ram_kernel_text = False
 	gdb_path='/usr/bin/gdb'
 	nm_path='/usr/bin/nm'
 	readelf_path='/usr/bin/readelf'
@@ -563,6 +587,10 @@ def main():
 	print('*************************************************************')
 	print('')
 
+	# Read config information
+	fd = open(config_path, 'r')
+	data = fd.read()
+	fd.close()
 
 	if not elf :
 		print('Usage error: Must specify -e option, please find below for proper usage')
@@ -618,6 +646,24 @@ def main():
 
 
 	try:
+		# Read config information
+		fd = open(config_path, 'r')
+		data = fd.read()
+		fd.close()
+
+		# Get arch family
+		if ('CONFIG_ARCH_FAMILY="armv8-m"' in data) or ('CONFIG_ARCH_FAMILY="armv7-m"' in data):
+			#If it's cortex M, then run debugsymbolviewer script and return
+			os.system("python ../debug/debugsymbolviewer.py")
+			return None
+
+		if not 'CONFIG_DEBUG_MM_HEAPINFO=y' in data:
+			print('DEBUG_MM_HEAPINFO is not enable. Enable DEBUG_MM_HEAPINFO to see heap usage')
+			return
+
+		if 'CONFIG_ARCH_HAVE_RAM_KERNEL_TEXT=y' in data:
+			have_ram_kernel_text = True
+
 		# Calling the Constructor with the initial set of arguments
 		rParser = dumpParser(dump_file=dump_file,elf=elf,gdb_path=gdb_path,nm_path=nm_path,readelf_path=readelf_path,log_file=log_file, debug=False)
 
@@ -625,10 +671,15 @@ def main():
 		rParser.setup_symbol_table(elf,debug=False)
 
 		# Find offset
-		global g_stext
-		g_stext = rParser.get_address_of_symbol("_stext")
-		global g_etext
-		g_etext = rParser.get_address_of_symbol("_etext")
+		global g_stext_flash
+		g_stext_flash = rParser.get_address_of_symbol("_stext_flash")
+		global g_etext_flash
+		g_etext_flash = rParser.get_address_of_symbol("_etext_flash")
+		if (have_ram_kernel_text):
+			global g_stext_ram
+			g_stext_ram = rParser.get_address_of_symbol("_stext_ram")
+			global g_etext_ram
+			g_etext_ram = rParser.get_address_of_symbol("_etext_ram")
 
 		# If the log file is given, then parse that log file only and exit
 		if log_file is not None:
@@ -659,10 +710,16 @@ def main():
 		linkRegister = rParser.read_word(ctxt_regs+(4*LR))
 		programCounter = rParser.read_word(ctxt_regs+(4*PC))
 		# There are spl case where PC can be invalid, So assigning LR to PC
-		if ( programCounter < g_stext or programCounter > g_etext):
-			# This is possible for a prefetch abort. so am taking care by assigning LR to PC
-			print("It's a Prefetch abort at Addr : ", hex(programCounter))
-			programCounter = linkRegister
+		if (not(programCounter >= g_stext_flash and programCounter <= g_etext_flash)):
+			if (have_ram_kernel_text):
+				if (not(programCounter >= g_stext_ram and programCounter <= g_etext_ram)):
+					# This is possible for a prefetch abort. so am taking care by assigning LR to PC
+					print("It's a Prefetch abort at Addr : ", hex(programCounter))
+					programCounter = linkRegister
+			else:
+				# This is possible for a prefetch abort. so am taking care by assigning LR to PC
+				print("It's a Prefetch abort at Addr : ", hex(programCounter))
+				programCounter = linkRegister
 
 
 		# Explicitly getting the PC and LR symbol names for display purpose
@@ -705,20 +762,11 @@ def main():
 		print('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&')
 
 
-		g_mmheap = rParser.get_address_of_symbol("g_mmheap")
-
-		# Read config information
-		fd = open(config_path, 'r')
-		data = fd.read()
-		fd.close()
-
-		if not 'CONFIG_DEBUG_MM_HEAPINFO=y' in data:
-			print('DEBUG_MM_HEAPINFO is not enable. Enable DEBUG_MM_HEAPINFO to see heap usage')
-			return
+		g_kmmheap = rParser.get_address_of_symbol("g_kmmheap")
 
 		# This information depends on the mm_heap_s structure
 
-		SIZE_OF_MM_SEM = 4
+		SIZE_OF_MM_SEM = 8
 		SIZE_OF_MM_HOLDER = 4
 		SIZE_OF_MM_COUNTS_HELD = 4
 
@@ -731,11 +779,26 @@ def main():
 		TOTAL_ALLOC_SIZE_POINT = PEAK_ALLOC_SIZE_POINT + SIZE_OF_PEAK_ALLOC_SIZE
 		SIZE_OF_TOTAL_ALLOC_SIZE = 4
 
+		SIZE_OF_MAX_GROUP = 4
 		SIZE_OF_HEAPINFO_TCB_INFO = 16
+
+		# Read heapinfo_path to procure HEAPINFO_USER_GROUP_NUM value
+
+		heapinfo_user_group_num = 0
+		with open(heapinfo_path) as searchfile:
+			for line in searchfile:
+				if 'HEAPINFO_USER_GROUP_DELIM_NUM' in line:
+					word = line.split(' ')
+					# word[2] contains the value
+					heapinfo_user_group_delim_num = int(word[2], 16)
+					heapinfo_user_group_num = heapinfo_user_group_delim_num + 1
+					break
+
+		TOTAL_HEAPINFO_TCB_INFO_POINT = SIZE_OF_TOTAL_ALLOC_SIZE + SIZE_OF_MAX_GROUP + (SIZE_OF_HEAPINFO_TCB_INFO * heapinfo_user_group_num)
+		ALLOC_LIST_POINT = TOTAL_ALLOC_SIZE_POINT + TOTAL_HEAPINFO_TCB_INFO_POINT
+
 		SIZE_OF_ALLOC_NODE = 16
 
-		ALLOC_LIST_POINT = TOTAL_ALLOC_SIZE_POINT + SIZE_OF_TOTAL_ALLOC_SIZE
-	
 		max_tasks = 0
 		# get MAX_TASKS num
 		if 'CONFIG_MAX_TASKS=' in data:
@@ -753,8 +816,8 @@ def main():
 		else:
 			MM_ALLOC_BIT = 0x80000000
 
-		start_heap = rParser.read_word(g_mmheap + HEAP_START_POINT)
-		end_heap = rParser.read_word(g_mmheap + HEAP_START_POINT + 4)
+		start_heap = rParser.read_word(g_kmmheap + HEAP_START_POINT)
+		end_heap = rParser.read_word(g_kmmheap + HEAP_START_POINT + 4)
 
 		print('')
 		print('')
@@ -790,11 +853,11 @@ def main():
 				data = fd_popen.read().decode()
 				fd_popen.close()
 				if pid >= 0:
-					print('{:^10}|'.format(hex(point)), '{:>6}'.format(size), '  |', '{:^7}|'.format('Alloc'), '{:^6}|'.format(pid), data[14:], end=' ')
+					print('{:^10}|'.format(hex(point)), '{:>6}'.format(size), '  |', '{:^7}|'.format('Alloc'), '{:^6}|'.format(pid), data[13:], end=' ')
 					f.write(str(size) + ' 0 ' + str(hex(point)) + ' ' + str(pid) + ' ' + data[14:])
 				else: # If pid is less than 0, it is the stack size of (-pid)
 					stack_size[(-pid) & (max_tasks - 1)] = size
-					print('{:^10}|'.format(hex(point)), '{:>6}'.format(size), '  |', '{:^7}|'.format('Alloc'), '{:^6}|'.format(-pid), data[14:], end=' ')
+					print('{:^10}|'.format(hex(point)), '{:>6}'.format(size), '  |', '{:^7}|'.format('Alloc'), '{:^6}|'.format(-pid), data[13:], end=' ')
 					f.write(str(size) + ' 1 ' + str(hex(point)) + ' ' + str(-pid) + ' ' + data[14:])
 			else:
 				print('{:^10}|'.format(hex(point)), '{:>6}'.format(size), '  |', '{:^7}|'.format('Free'), '{:6}|'.format(""))
@@ -808,13 +871,13 @@ def main():
 		print('       Summary of Heap Usages (Size in Bytes)')
 		print('***********************************************************')
 
-		heap_size = rParser.read_word(g_mmheap + HEAP_SIZE_POINT)
+		heap_size = rParser.read_word(g_kmmheap + HEAP_SIZE_POINT)
 		print('HEAP SIZE        : ', heap_size)
 
-		peack_alloc_size = rParser.read_word(g_mmheap + PEAK_ALLOC_SIZE_POINT)
+		peack_alloc_size = rParser.read_word(g_kmmheap + PEAK_ALLOC_SIZE_POINT)
 		print('PEAK ALLOC SIZE  : ', peack_alloc_size)
 
-		total_alloc_size = rParser.read_word(g_mmheap + TOTAL_ALLOC_SIZE_POINT)
+		total_alloc_size = rParser.read_word(g_kmmheap + TOTAL_ALLOC_SIZE_POINT)
 		print('TOTAL ALLOC SIZE : ', total_alloc_size)
 		print('FREE SIZE        : ', heap_size - total_alloc_size)
 		print('')
@@ -823,7 +886,7 @@ def main():
 		print('-------|------------|-------------------|-----------------|')
 		INVALID_PROCESS_ID = 0xFFFFFFFF
 
-		alloc_list = ALLOC_LIST_POINT + g_mmheap
+		alloc_list = ALLOC_LIST_POINT + g_kmmheap
 		for i in range(0, max_tasks):
 			pid = rParser.read_word(alloc_list)
 			if pid != INVALID_PROCESS_ID :

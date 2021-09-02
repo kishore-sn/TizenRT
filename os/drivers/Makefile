@@ -76,6 +76,7 @@ include bch$(DELIM)Make.defs
 include cpuload$(DELIM)Make.defs
 include fota$(DELIM)Make.defs
 include gpio$(DELIM)Make.defs
+include prodconfig$(DELIM)Make.defs
 include memory$(DELIM)Make.defs
 include i2c$(DELIM)Make.defs
 include iotdev$(DELIM)Make.defs
@@ -146,6 +147,7 @@ OBJS = $(AOBJS) $(COBJS)
 BIN = libdrivers$(LIBEXT)
 
 all: $(BIN)
+.PHONY: depend clean distclean
 
 $(AOBJS): %$(OBJEXT): %.S
 	$(call ASSEMBLE, $<, $@)

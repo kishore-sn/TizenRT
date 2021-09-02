@@ -21,19 +21,44 @@
 /********************************************************************************************
  * Included Files
  ********************************************************************************************/
+#include <sys/prctl.h>
 
 typedef enum {
-	REBOOT_REASON_INITIALIZED	= 0,
-	REBOOT_SYSTEM_DATAABORT		= 1,	/* Data abort */
-	REBOOT_SYSTEM_PREFETCHABORT	= 2,	/* Prefetch abort */
-	REBOOT_SYSTEM_MEMORYALLOCFAIL	= 3,	/* Memory allocation failure */
-	REBOOT_SYSTEM_WATCHDOG		= 4,	/* Watchdog timeout */
-	REBOOT_SYSTEM_HW_RESET		= 5,	/* HW power reset */
-	REBOOT_SYSTEM_USER_INTENDED	= 6,	/* Reboot from user intention */
-	REBOOT_SYSTEM_WIFICORE_WATCHDOG = 11,	/* Wi-Fi Core Watchdog Reset */
-	REBOOT_SYSTEM_WIFICORE_PANIC    = 12,	/* Wi-Fi Core Panic */
-	REBOOT_SYSTEM_BINARY_UPDATE	= 34,	/* Reboot for Binary Update */
-	REBOOT_UNKNOWN 	 		= 99,
+	/* [Reboot Reason Code]
+	 * System : 50 ~ 79
+	 * Network : 80 ~ 109,
+	 * Common Service : 110 ~ 139,
+	 * App : 140 ~ 249
+	 * Board Specific : 250 ~ 254
+	 */
+	REBOOT_REASON_INITIALIZED          = 50,
+	REBOOT_SYSTEM_DATAABORT            = 51, /* Data abort */
+	REBOOT_SYSTEM_PREFETCHABORT        = 52, /* Prefetch abort */
+	REBOOT_SYSTEM_MEMORYALLOCFAIL      = 53, /* Memory allocation failure */
+	REBOOT_SYSTEM_WATCHDOG             = 54, /* Watchdog timeout */
+	REBOOT_SYSTEM_HW_RESET             = 55, /* HW power reset */
+	REBOOT_SYSTEM_USER_INTENDED        = 56, /* Reboot from user intention */
+	REBOOT_SYSTEM_BINARY_UPDATE        = 57, /* Reboot for Binary Update */
+	REBOOT_SYSTEM_BINARY_RECOVERYFAIL  = 58, /* Binary Recovery Fail */
+
+	REBOOT_NETWORK_WIFICORE_WATCHDOG   = 80, /* Wi-Fi Core Watchdog Reset */
+	REBOOT_NETWORK_WIFICORE_PANIC      = 81, /* Wi-Fi Core Panic */
+
+	REBOOT_BOARD_SPECIFIC1             = 250, /* Board Specific Reboot Reason */
+	REBOOT_BOARD_SPECIFIC2             = 251,
+	REBOOT_BOARD_SPECIFIC3             = 252,
+	REBOOT_BOARD_SPECIFIC4             = 253,
+	REBOOT_BOARD_SPECIFIC5             = 254,
+
+	REBOOT_UNKNOWN                     = 255,
 } reboot_reason_code_t;
+
+#define WRITE_REBOOT_REASON(x) do {                                       \
+					prctl(PR_REBOOT_REASON_WRITE, x); \
+				} while (0)
+#define READ_REBOOT_REASON() prctl(PR_REBOOT_REASON_READ)
+#define CLEAR_REBOOT_REASON() do {                                     \
+					prctl(PR_REBOOT_REASON_CLEAR); \
+				} while (0)
 
 #endif					/* __INCLUDEREBOOT_REASON_H */

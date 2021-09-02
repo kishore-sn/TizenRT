@@ -18,9 +18,9 @@
 #ifndef __VWIFI_HANDLER_H__
 #define __VWIFI_HANDLER_H__
 
-#define VWIFI_LOG nlvdbg
-#define VWIFI_ENTRY nlvdbg("-->T%d %s:%d\n", getpid(), __FUNCTION__, __LINE__)
-#define VWIFI_ERROR(res) nldbg("T%d error %d %d %s:%d\n", getpid(), res, errno, __FUNCTION__, __LINE__)
+#define VWIFI_LOG vdvdbg
+#define VWIFI_ENTRY vdvdbg("-->T%d %s:%d\n", getpid(), __FUNCTION__, __LINE__)
+#define VWIFI_ERROR(res) vddbg("T%d error %d %d %s:%d\n", getpid(), res, errno, __FUNCTION__, __LINE__)
 
 typedef enum {
 	VWIFI_MSG_INIT,
@@ -33,6 +33,7 @@ typedef enum {
 	VWIFI_MSG_STARTSOFTAP,
 	VWIFI_MSG_STOPSOFTAP,
 	VWIFI_MSG_SETAUTOCONNECT,
+	VWIFI_MSG_IOCTL,
 } vwifi_req_e;
 
 typedef enum {
@@ -50,7 +51,7 @@ typedef enum {
 struct vwifi_req {
 	vwifi_req_e type;
 	void *arg;
-	trwifi_result_e res;
+	trwifi_result_e *res;
 };
 
 struct vwifi_msg {
@@ -99,5 +100,5 @@ struct vwifi_ops {
 };
 
 int vwifi_handle_message(struct vwifi_req *req);
-int vwifi_create_event(struct vwifi_evt *vevent, int sleep, lwnl_cb_status event);
+int vwifi_create_event(uint32_t event, int32_t res, int32_t sleep);
 #endif // #define __VWIFI_HANDLER_H__

@@ -119,7 +119,7 @@ static inline int day_of_week(FAR const char *abbrev)
 
 static inline int date_showtime(void)
 {
-	static const char format[] = "%b %d %H:%M:%S %Y %a";
+	static const char format[] = "%b %d %H:%M:%S %Y %a %Z";
 	struct timespec ts;
 	struct tm tm;
 	char timbuf[MAX_TIME_STRING];
@@ -136,7 +136,7 @@ static inline int date_showtime(void)
 
 	/* Break the current time up into the format needed by strftime */
 
-	(void)gmtime_r((FAR const time_t *)&ts.tv_sec, &tm);
+	(void)localtime_r((FAR const time_t *)&ts.tv_sec, &tm);
 
 	/* Show the current time in the requested format */
 

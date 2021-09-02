@@ -467,6 +467,15 @@ static int user_main(int argc, char *argv[])
 #ifdef CONFIG_SCHED_WORKQUEUE
 		printf("\nuser_main: workqueue() test\n");
 		workqueue_test();
+		check_test_memory_usage();
+#endif
+
+#ifndef CONFIG_DISABLE_PTHREAD
+		/* Verify pthread multiple creation */
+
+		printf("\nuser_main: pthread test\n");
+		pthread_test();
+		check_test_memory_usage();
 #endif
 		/* Compare memory usage at time kernel_sample_main started until
 		 * user_main exits.  These should not be identical, but should

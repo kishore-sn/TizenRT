@@ -22,7 +22,7 @@
 
 #include <tinyara/config.h>
 #if defined(CONFIG_NET_IPv4) && CONFIG_NSOCKET_DESCRIPTORS > 0
-
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <string.h>
@@ -33,38 +33,39 @@
 #include <ifaddrs.h>
 #include <netutils/netlib.h>
 #include <tinyara/lwnl/lwnl.h>
+#include <tinyara/net/netlog.h>
 
-#define INTF_NAME "None"
+#define TAG "[NETLIB]"
 
 static inline int _send_msg(lwnl_msg *msg)
 {
 	int ret = 0;
-
 	int fd = socket(AF_LWNL, SOCK_RAW, LWNL_ROUTE);
 	if (fd < 0) {
+		NET_LOGE(TAG, "create socket %d\n", errno);
 		ret = -1;
 	} else {
 		if (write(fd, msg, sizeof(*msg)) < 0) {
+			NET_LOGE(TAG, "write %d\n", errno);
 			ret = -2;
 		}
-
 		close(fd);
 	}
-
 	return ret;
 }
 
 int netlib_getifaddrs(struct ifaddrs **ifap)
 {
-	lwnl_msg msg = {INTF_NAME, LWNL_GET_ADDR_INFO, sizeof(*ifap), NULL, 0};
-	int res = _send_msg(&msg);
-	if (res < 0) {
-		printf("error %d %s:%d\n", res, __FILE__, __LINE__);
+	int res = 0;
+	lwnl_msg msg = {LWNL_INTF_NAME, {LWNL_REQ_COMMON_GETADDRINFO},
+					sizeof(*ifap), NULL, (void *)&res};
+	int lres = _send_msg(&msg);
+	if (lres < 0) {
+		NET_LOGE(TAG, "send request msg fail %d %d\n", lres, res);
 		return -1;
 	}
 	*ifap = (struct ifaddrs *)msg.data;
-
-	return 0;
+	return res;
 }
 
 void netlib_freeifaddrs(struct ifaddrs *ifa)

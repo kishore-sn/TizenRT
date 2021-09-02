@@ -15,17 +15,16 @@
  * limitations under the License.
  *
  ******************************************************************/
+#include <tinyara/config.h>
 #include <pthread.h>
-
-#include <tinyara/wifi/wifi_utils.h>
-#include "wifi_conf.h"
+#include "wifi/wifi_conf.h"
 #include "rtk_wifi_utils.h"
 #include <wifi_manager/wifi_manager.h>
 #include <debug.h>
 #include <net/if.h>
 #include <tinyara/lwnl/lwnl.h>
 #include <tinyara/net/if/wifi.h>
-
+#include <tinyara/netmgr/netdev_mgr.h>
 /* WLAN CONFIG ---------------------------------------------------------------*/
 #define RTK_OK          0		/*!< RTK_err_t value indicating success (no error) */
 #define RTK_FAIL        -1		/*!< Generic RTK_err_t code indicating failure */
@@ -56,7 +55,7 @@ static WiFi_InterFace_ID_t g_mode = RTK_WIFI_NONE;
 
 trwifi_result_e wifi_netmgr_utils_init(struct netdev *dev);
 trwifi_result_e wifi_netmgr_utils_deinit(struct netdev *dev);
-trwifi_result_e wifi_netmgr_utils_scan_ap(struct netdev *dev, trwifi_ap_config_s *config);
+trwifi_result_e wifi_netmgr_utils_scan_ap(struct netdev *dev, trwifi_scan_config_s *config);
 trwifi_result_e wifi_netmgr_utils_connect_ap(struct netdev *dev, trwifi_ap_config_s *ap_connect_config, void *arg);
 trwifi_result_e wifi_netmgr_utils_disconnect_ap(struct netdev *dev, void *arg);
 trwifi_result_e wifi_netmgr_utils_get_info(struct netdev *dev, trwifi_info *wifi_info);
@@ -64,7 +63,7 @@ trwifi_result_e wifi_netmgr_utils_start_sta(struct netdev *dev);
 trwifi_result_e wifi_netmgr_utils_start_softap(struct netdev *dev, trwifi_softap_config_s *softap_config);
 trwifi_result_e wifi_netmgr_utils_stop_softap(struct netdev *dev);
 trwifi_result_e wifi_netmgr_utils_set_autoconnect(struct netdev *dev, uint8_t check);
-
+trwifi_result_e wifi_netmgr_utils_ioctl(struct netdev *dev, trwifi_msg_s *msg);
 struct trwifi_ops g_trwifi_drv_ops = {
 	wifi_netmgr_utils_init,			/* init */
 	wifi_netmgr_utils_deinit,			/* deinit */
@@ -76,145 +75,165 @@ struct trwifi_ops g_trwifi_drv_ops = {
 	wifi_netmgr_utils_start_softap,	/* start_softap */
 	wifi_netmgr_utils_stop_softap,		/* stop_softap */
 	wifi_netmgr_utils_set_autoconnect, /* set_autoconnect */
-	NULL					/* drv_ioctl */
+	wifi_netmgr_utils_ioctl,					/* drv_ioctl */
 };
 
-static wifi_utils_scan_list_s *g_scan_list;
+static trwifi_scan_list_s *g_scan_list;
 static int g_scan_num;
+extern struct netdev *ameba_nm_dev_wlan0;
+
 static void _free_scanlist(void)
 {
 	while (g_scan_list) {
-		wifi_utils_scan_list_s *cur = g_scan_list;
+		trwifi_scan_list_s *cur = g_scan_list;
 		g_scan_list = g_scan_list->next;
-		rtw_mfree(cur, sizeof(wifi_utils_scan_list_s));
+		rtw_mfree(cur, sizeof(trwifi_scan_list_s));
 	}
 	g_scan_num = 0;
 }
 rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_result)
 {
-	wifi_utils_scan_list_s *scan_list;
-	scan_list = (wifi_utils_scan_list_s *)rtw_zmalloc(sizeof(wifi_utils_scan_list_s));
-	if (scan_list == NULL) {
-		ndbg("\r\n[app_scan_result_handler]:Fail to malloc scan_list\r\n");
-		return RTW_ERROR;
-	}
+	trwifi_scan_list_s *scan_list;
 
 	if (malloced_scan_result->scan_complete != RTW_TRUE) {
+		scan_list = (trwifi_scan_list_s *)rtw_zmalloc(sizeof(trwifi_scan_list_s));
+		if (scan_list == NULL) {
+			ndbg("\r\n[app_scan_result_handler]:Fail to malloc scan_list\r\n");
+			return RTW_ERROR;
+		}
 		rtw_scan_result_t *record = &malloced_scan_result->ap_details;
 		record->SSID.val[record->SSID.len] = 0; /* Ensure the SSID is null terminated */
 		scan_list->ap_info.channel = record->channel;
 		strncpy(scan_list->ap_info.ssid, (const char *)record->SSID.val, record->SSID.len);
 		scan_list->ap_info.ssid_length = record->SSID.len;
-		snprintf((char *)scan_list->ap_info.bssid, WIFI_UTILS_MACADDR_STR_LEN, "%02x:%02x:%02x:%02x:%02x:%02x", record->BSSID.octet[0], record->BSSID.octet[1], record->BSSID.octet[2], record->BSSID.octet[3], record->BSSID.octet[4], record->BSSID.octet[5]);
+		snprintf((char *)scan_list->ap_info.bssid, TRWIFI_MACADDR_STR_LEN + 1, "%02x:%02x:%02x:%02x:%02x:%02x", record->BSSID.octet[0], record->BSSID.octet[1], record->BSSID.octet[2], record->BSSID.octet[3], record->BSSID.octet[4], record->BSSID.octet[5]);
 		scan_list->ap_info.max_rate = 0;
 		scan_list->ap_info.rssi = record->signal_strength;
 		scan_list->ap_info.phy_mode = 0x00000004; //bit2 is set to 1 if support 11n
 		switch (record->security) {
 		case RTW_SECURITY_OPEN:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_OPEN;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_OPEN;
 			break;
 		case RTW_SECURITY_WEP_SHARED:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WEP_SHARED;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WEP_SHARED;
 			break;
 		case RTW_SECURITY_WEP_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WEP_SHARED;
 			break;
 		case RTW_SECURITY_WPA_TKIP_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_PSK;
 			break;
 		case RTW_SECURITY_WPA_AES_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_PSK;
+			break;
+		case RTW_SECURITY_WPA_MIXED_PSK:
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_PSK;
 			break;
 		case RTW_SECURITY_WPA2_AES_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA2_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA2_PSK;
 			break;
 		case RTW_SECURITY_WPA2_TKIP_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA2_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA2_PSK;
 			break;
 		case RTW_SECURITY_WPA2_MIXED_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA2_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA2_PSK;
 			break;
-		case RTW_SECURITY_WPA_WPA2_MIXED:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA_AND_WPA2_PSK;
+		case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_AND_WPA2_PSK;
+			break;
+		case RTW_SECURITY_WPA_WPA2_AES_PSK:
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_AND_WPA2_PSK;
+			break;
+		case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_AND_WPA2_PSK;
 			break;
 		case RTW_SECURITY_WPA2_AES_CMAC:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA2_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA2_PSK;
 			break;
 		case RTW_SECURITY_WPA2_ENTERPRISE:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA2_PSK_ENT;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA2_PSK_ENT;
 			break;
 		case RTW_SECURITY_WPA_WPA2_ENTERPRISE:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA_AND_WPA2_PSK_ENT;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA_AND_WPA2_PSK_ENT;
 			break;
 		case RTW_SECURITY_WPS_OPEN:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPS;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPS;
 			break;
 		case RTW_SECURITY_WPS_SECURE:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPS;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPS;
 			break;
 		case RTW_SECURITY_WPA3_AES_PSK:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_WPA3_PSK;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA3_PSK;
 			break;
 		default:
-			scan_list->ap_info.ap_auth_type = WIFI_UTILS_AUTH_UNKNOWN;
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_UNKNOWN;
 			break;
 		}
 
 		switch (record->security) {
 		case RTW_SECURITY_OPEN:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_NONE;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_NONE;
 			break;
 		case RTW_SECURITY_WEP_SHARED:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_WEP_64;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_WEP_64;
 			break;
 		case RTW_SECURITY_WEP_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_WEP_128;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_WEP_128;
 			break;
 		case RTW_SECURITY_WPA_TKIP_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_TKIP;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_TKIP;
 			break;
 		case RTW_SECURITY_WPA_AES_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
+			break;
+		case RTW_SECURITY_WPA_MIXED_PSK:
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_TKIP_AND_AES;
 			break;
 		case RTW_SECURITY_WPA2_AES_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
 			break;
 		case RTW_SECURITY_WPA2_TKIP_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_TKIP;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_TKIP;
 			break;
 		case RTW_SECURITY_WPA2_MIXED_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_TKIP_AND_AES;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_TKIP_AND_AES;
 			break;
-		case RTW_SECURITY_WPA_WPA2_MIXED:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES;
+		case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_TKIP;
+			break;
+		case RTW_SECURITY_WPA_WPA2_AES_PSK:
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
+			break;
+		case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_TKIP_AND_AES;
 			break;
 		case RTW_SECURITY_WPA2_AES_CMAC:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_UNKNOWN;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_UNKNOWN;
 			break;
 		case RTW_SECURITY_WPA2_ENTERPRISE:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES_ENT;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES_ENT;
 			break;
 		case RTW_SECURITY_WPA_WPA2_ENTERPRISE:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES_ENT;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES_ENT;
 			break;
 		case RTW_SECURITY_WPS_OPEN:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_NONE;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_NONE;
 			break;
 		case RTW_SECURITY_WPS_SECURE:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
 			break;
 		case RTW_SECURITY_WPA3_AES_PSK:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_AES;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
 			break;
 		default:
-			scan_list->ap_info.ap_crypto_type = WIFI_UTILS_CRYPTO_UNKNOWN;
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_UNKNOWN;
 			break;
 		}
 		if (g_scan_list == NULL) {
 			g_scan_list = scan_list;
 			g_scan_num = 1;
 		} else {
-			wifi_utils_scan_list_s *cur = g_scan_list;
+			trwifi_scan_list_s *cur = g_scan_list;
 			int idx;
 			for (idx = 1; idx < g_scan_num; idx++) {
 				cur = cur->next;
@@ -225,7 +244,7 @@ rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_re
 		}
 	} else {
 		nvdbg("SCAN DONE: Calling wifi_scan_result_callback\r\n");
-		lwnl_postmsg(LWNL_SCAN_DONE, (void *)g_scan_list);
+		TRWIFI_POST_SCANEVENT(ameba_nm_dev_wlan0, LWNL_EVT_SCAN_DONE, (void *)g_scan_list);
 		_free_scanlist();
 		if (g_scan_list) {
 			ndbg("SCAN list is not initialized\n");
@@ -235,85 +254,95 @@ rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_re
 	return RTW_SUCCESS;
 }
 
+int parse_scan_with_ssid_res(char*buf, int buflen, char *target_ssid, void *user_data)
+{
+	if (rltk_wlan_scan_with_ssid_by_extended_security_is_enable()) {
+			int plen = 0, scan_cnt = 0;
+			rtw_scan_handler_result_t scan_result_report;
+			scan_result_report.scan_complete = RTW_FALSE;
+			scan_result_report.user_data = user_data;
+			while (plen < buflen) {
+				int len;
+				rtw_memset(&scan_result_report.ap_details, 0, sizeof(scan_result_report.ap_details));
+				len = (int)*(buf + plen);
+				if (len == 0) break;
+				scan_result_report.ap_details.SSID.len = len - 1 - 6 - 4 - 4 - 1 - 1;
+				rtw_memcpy(&scan_result_report.ap_details.SSID.val, (buf + plen + 1 + 6 + 4 + 4 + 1 + 1), scan_result_report.ap_details.SSID.len);
+				rtw_memcpy(&scan_result_report.ap_details.BSSID.octet, buf + plen + 1, 6);
+				rtw_memcpy(&scan_result_report.ap_details.signal_strength, buf + plen + 1 + 6, 4);
+				rtw_memcpy(&scan_result_report.ap_details.security, buf + plen + 1 + 6 + 4, 4);
+				scan_result_report.ap_details.wps_type = (int)*(buf + plen + 1 + 6 + 4 + 4);
+				scan_result_report.ap_details.channel = (int)*(buf + plen + 1 + 6 + 4 + 4 + 1);
+				app_scan_result_handler(&scan_result_report);
+				plen += len;
+				scan_cnt++;
+			}
+			//RTW_API_INFO("\n\rwifi_scan: scan count = %d, scan_cnt);
+			rltk_wlan_enable_scan_with_ssid_by_extended_security(0);
+			scan_result_report.scan_complete = RTW_TRUE;
+			app_scan_result_handler(&scan_result_report);
+			return RTW_SUCCESS;
+		} else {
+			RTW_API_INFO("scan_with_ssid_by_extended_security is not enabled\n");
+			return RTW_ERROR;
+		}
+}
+
 /*
  * Callback
  */
-static int rtk_drv_callback_handler(int argc, char *argv[])
+static int rtk_drv_callback_handler(int type)
 {
-	//RTKDRV_ENTER;
-	int type = (int)(argv[1][0] - '0');
-
 	switch (type) {
 	case 1:
-		lwnl_postmsg(LWNL_STA_CONNECTED, NULL);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_STA_CONNECTED, NULL, 0);
 		break;
 	case 2:
-		lwnl_postmsg(LWNL_STA_CONNECT_FAILED, NULL);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_STA_CONNECT_FAILED, NULL, 0);
 		break;
 	case 3:
-		lwnl_postmsg(LWNL_SOFTAP_STA_JOINED, NULL);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_SOFTAP_STA_JOINED, NULL, 0);
 		break;
 	case 4:
-		lwnl_postmsg(LWNL_STA_DISCONNECTED, NULL);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_STA_DISCONNECTED, NULL, 0);
 		break;
 	case 5:
-		lwnl_postmsg(LWNL_SOFTAP_STA_LEFT, NULL);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_SOFTAP_STA_LEFT, NULL, 0);
 		break;
 	default:
-		lwnl_postmsg(LWNL_UNKNOWN, NULL);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_UNKNOWN, NULL, 0);
 		break;
 	}
-
 	return 0;
 }
 
-static void linkup_handler(rtk_reason_t *reason)
+void linkup_handler(rtk_reason_t *reason)
 {
 	//RTKDRV_ENTER;
-	pid_t pid;
-	char *argv[2];
-	argv[1] = NULL;
-	char data[2] = {0, 0};
+	int type = 0;
 
 	if (g_mode == RTK_WIFI_STATION_IF) {
 		if (reason->reason_code == RTK_STATUS_SUCCESS) {
-			data[0] = '1';
+			type = 1;
 		} else {
-			data[0] = '2';
+			type = 2;
 		}
 	} else if (g_mode == RTK_WIFI_SOFT_AP_IF) {
-		data[0] = '3';
+		type = 3;
 	}
-	argv[0] = data;
-
-	pid = kernel_thread("lwnl80211_cbk_handler", 100, 1024, (main_t)rtk_drv_callback_handler, argv);
-	if (pid < 0) {
-		vddbg("pthread create fail(%d)\n", errno);
-		return;
-	}
+	(void)rtk_drv_callback_handler(type);
 }
 
-static void linkdown_handler(rtk_reason_t *reason)
+void linkdown_handler(rtk_reason_t *reason)
 {
 	//RTKDRV_ENTER;
-	pid_t pid;
-	char *argv[2];
-	argv[1] = NULL;
-	char data[2] = {0, 0};
-
-	data[0] = '4';
+	int type = 4;
 	if (g_mode == RTK_WIFI_STATION_IF) {
-		data[0] = '4';
+		type = 4;
 	} else if (g_mode == RTK_WIFI_SOFT_AP_IF) {
-		data[0] = '5';
+		type = 5;
 	}
-	argv[0] = data;
-
-	pid = kernel_thread("lwnl80211_cbk_handler", 100, 1024, (main_t)rtk_drv_callback_handler, argv);
-	if (pid < 0) {
-		vddbg("pthread create fail(%d)\n", errno);
-		return;
-	}
+	(void)rtk_drv_callback_handler(type);
 }
 
 
@@ -323,7 +352,6 @@ static void linkdown_handler(rtk_reason_t *reason)
 trwifi_result_e wifi_netmgr_utils_init(struct netdev *dev)
 {
 	trwifi_result_e wuret = TRWIFI_FAIL;
-g_mode = RTK_WIFI_NONE;
 	if (g_mode == RTK_WIFI_NONE) {
 		int ret = RTK_STATUS_SUCCESS;
 		
@@ -362,16 +390,28 @@ trwifi_result_e wifi_netmgr_utils_deinit(struct netdev *dev)
 	return wuret;
 }
 
-trwifi_result_e wifi_netmgr_utils_scan_ap(struct netdev *dev, trwifi_ap_config_s *config)
+trwifi_result_e wifi_netmgr_utils_scan_ap(struct netdev *dev, trwifi_scan_config_s *config)
 {
-	trwifi_result_e wuret = TRWIFI_FAIL;
-	if(wifi_scan_networks(app_scan_result_handler, NULL ) != RTW_SUCCESS){
-		//ndbg("[RTK] [ERR] WiFi scan fail(%d)\n", ret);
-		return wuret;
+	if (config) {
+		if (config->ssid_length > 0) {
+			int scan_buf_len = 500;
+			rltk_wlan_enable_scan_with_ssid_by_extended_security(1);
+			if (wifi_scan_networks_with_ssid(parse_scan_with_ssid_res, NULL,
+											 scan_buf_len, config->ssid, config->ssid_length) != RTW_SUCCESS) {
+				return TRWIFI_FAIL;
+			}
+		} else {
+			// scan specified channel.
+			return TRWIFI_NOT_SUPPORTED;
+		}
+	} else {
+		if (wifi_scan_networks(app_scan_result_handler, NULL ) != RTW_SUCCESS) {
+			//ndbg("[RTK] [ERR] WiFi scan fail(%d)\n", ret);
+			return TRWIFI_FAIL;
+		}
 	}
-	wuret = TRWIFI_SUCCESS;
-	ndbg("[RTK] WIFi Scan success\n");
-	return wuret;
+	nvdbg("[RTK] WIFi Scan success\n");
+	return TRWIFI_SUCCESS;
 }
 
 trwifi_result_e wifi_netmgr_utils_connect_ap(struct netdev *dev, trwifi_ap_config_s *ap_connect_config, void *arg)
@@ -385,18 +425,18 @@ trwifi_result_e wifi_netmgr_utils_connect_ap(struct netdev *dev, trwifi_ap_confi
 	wuret = TRWIFI_FAIL;
 
 	if (g_mode == RTK_WIFI_SOFT_AP_IF) {
-		if(wifi_netmgr_utils_deinit(dev)){
+		if (wifi_netmgr_utils_deinit(dev)) {
 			ndbg("[RTK] Failed to stop AP mode\n");
 			return TRWIFI_FAIL;
 		}
 		vTaskDelay(20);
-		if (wifi_netmgr_utils_init(dev) < 0){
+		if (wifi_netmgr_utils_init(dev) < 0) {
 			ndbg("\n\rERROR: Wifi on failed!");
 			return TRWIFI_FAIL;
 		}
 	}
 
-	ret = cmd_wifi_connect(ap_connect_config,arg);
+	ret = cmd_wifi_connect(ap_connect_config, arg);
 	if (ret != RTK_STATUS_SUCCESS) {
 		ndbg("[RTK] WiFiNetworkJoin failed: %d, %s\n", ret, ap_connect_config->ssid);
 		return wuret;
@@ -414,7 +454,7 @@ trwifi_result_e wifi_netmgr_utils_disconnect_ap(struct netdev *dev, void *arg)
 	trwifi_result_e wuret = TRWIFI_FAIL;
 	int ret = cmd_wifi_disconnect();
 	if (ret == RTK_STATUS_SUCCESS) {
-		ndbg("[RTK] WiFiNetworkLeave success\n");
+		nvdbg("[RTK] WiFiNetworkLeave success\n");
 		wuret = TRWIFI_SUCCESS;
 	} else {
 		ndbg("[RTK] WiFiNetworkLeave fail because of %d\n", ret);
@@ -429,30 +469,21 @@ trwifi_result_e wifi_netmgr_utils_get_info(struct netdev *dev, trwifi_info *wifi
 	if (wifi_info) {
 		wuret = TRWIFI_FAIL;
 		if (g_mode != RTK_WIFI_NONE) {
-			char mac_str[18] = {0 ,};
-			(void)wifi_get_mac_address((char *)mac_str);
-
-			int ret = sscanf(mac_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx%*c", &wifi_info->mac_address[0], &wifi_info->mac_address[1], &wifi_info->mac_address[2], &wifi_info->mac_address[3], &wifi_info->mac_address[4], &wifi_info->mac_address[5]);
-
-			if (ret == WIFIMGR_MACADDR_LEN) {
-				wifi_info->rssi = (int)0;
-				if (g_mode == RTK_WIFI_SOFT_AP_IF) {
-					wifi_info->wifi_status = WIFI_UTILS_SOFTAP_MODE;
-				} else if (g_mode == RTK_WIFI_STATION_IF) {
-					if (wifi_is_connected_to_ap() == RTK_STATUS_SUCCESS) {
-						int rssi;
-						wifi_info->wifi_status = WIFI_UTILS_CONNECTED;
-						if (wifi_get_rssi(&rssi) == RTK_STATUS_SUCCESS) {
-							wifi_info->rssi = (int)rssi;
-						}
-					} else {
-						wifi_info->wifi_status = WIFI_UTILS_DISCONNECTED;
+			wifi_info->rssi = (int)0;
+			if (g_mode == RTK_WIFI_SOFT_AP_IF) {
+				wifi_info->wifi_status = TRWIFI_SOFTAP_MODE;
+			} else if (g_mode == RTK_WIFI_STATION_IF) {
+				if (wifi_is_connected_to_ap() == RTK_STATUS_SUCCESS) {
+					int rssi;
+					wifi_info->wifi_status = TRWIFI_CONNECTED;
+					if (wifi_get_rssi(&rssi) == RTK_STATUS_SUCCESS) {
+						wifi_info->rssi = (int)rssi;
 					}
+				} else {
+					wifi_info->wifi_status = TRWIFI_DISCONNECTED;
 				}
-				wuret = TRWIFI_SUCCESS;
-			} else {
-				ndbg("[RTK] no MAC exists\n");
 			}
+			wuret = TRWIFI_SUCCESS;
 		} else {
 			ndbg("[RTK] need to init... get info fail\n");
 		}
@@ -467,7 +498,7 @@ trwifi_result_e wifi_netmgr_utils_start_softap(struct netdev *dev, trwifi_softap
 		return TRWIFI_INVALID_ARGS;
 	}
 
-	if(g_mode == RTK_WIFI_SOFT_AP_IF)
+	if (g_mode == RTK_WIFI_SOFT_AP_IF)
 		ndbg("[RTK] softap is already running!\n");
 
 	trwifi_result_e ret = TRWIFI_FAIL;
@@ -497,7 +528,7 @@ trwifi_result_e wifi_netmgr_utils_start_sta(struct netdev *dev)
 	trwifi_result_e wuret = TRWIFI_FAIL;
 	int ret = RTK_STATUS_SUCCESS;
 
-	if(g_mode == RTK_WIFI_STATION_IF)
+	if (g_mode == RTK_WIFI_STATION_IF)
 		ndbg("[RTK] station is already running!\n");
 
 	ret = WiFiRegisterLinkCallback(&linkup_handler, &linkdown_handler);
@@ -529,7 +560,7 @@ trwifi_result_e wifi_netmgr_utils_stop_softap(struct netdev *dev)
 		if (ret == RTK_STATUS_SUCCESS) {
 			g_mode = RTK_WIFI_NONE;
 			wuret = TRWIFI_SUCCESS;
-			ndbg("[RTK] Stop AP mode successfully\n");
+			nvdbg("[RTK] Stop AP mode successfully\n");
 		} else {
 			ndbg("[RTK] Stop AP mode fail\n");
 		}
@@ -546,11 +577,26 @@ trwifi_result_e wifi_netmgr_utils_set_autoconnect(struct netdev *dev, uint8_t ch
 	ret = wifi_set_autoreconnect(check);
 	if (ret == RTK_STATUS_SUCCESS) {
 		wuret = TRWIFI_SUCCESS;
-		ndbg("[RTK] External Autoconnect set to %d\n", check);
+		nvdbg("[RTK] External Autoconnect set to %d\n", check);
 	} else {
 		ndbg("[RTK] External Autoconnect failed to set %d", check);
 	}
 	return wuret;
 }
 
-
+trwifi_result_e wifi_netmgr_utils_ioctl(struct netdev *dev, trwifi_msg_s *msg)
+{
+	if (msg->cmd == TRWIFI_MSG_SET_POWERMODE) {
+		int *mode = (int *)msg->data;
+		if (*mode == TRWIFI_POWERMODE_ON) {
+			ndbg("[RTK] set power mode on\n");
+			wifi_enable_powersave();
+			return TRWIFI_SUCCESS;
+		} else if (*mode == TRWIFI_POWERMODE_OFF) {
+			ndbg("[RTK] set power mode off\n");
+			wifi_disable_powersave();
+			return TRWIFI_SUCCESS;
+		}
+	}
+	return TRWIFI_NOT_SUPPORTED;
+}

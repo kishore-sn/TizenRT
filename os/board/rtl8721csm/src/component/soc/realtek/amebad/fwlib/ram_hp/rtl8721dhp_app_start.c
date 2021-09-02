@@ -1325,14 +1325,14 @@ void app_start(void)
 	app_section_init();
 	_memset((void *) __bss_start__, 0, (__bss_end__ - __bss_start__));
 
+	DBG_ERR_MSG_ON(MODULE_MISC); /* Enable debug log for hard fault handler */
+
 #ifdef CONFIG_AMEBAD_TRUSTZONE
 	BOOT_IMG3();
 #endif
 
 	/* enable non-secure cache */
 	Cache_Enable(ENABLE);
-
-	DBG_PRINTF(MODULE_BOOT, LEVEL_INFO,"KM4 BOOT REASON: %x \n", BOOT_Reason());
 
 	SystemCoreClockUpdate();
 

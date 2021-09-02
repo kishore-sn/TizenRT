@@ -136,19 +136,10 @@
 
 #define BAD_MIC_COUNTERMEASURE 1
 #define DEFRAGMENTATION 1
+#define RX_AGGREGATION 1
+#define RX_AMSDU 1
 
 #define WIFI_LOGO_CERTIFICATION 0
-#if WIFI_LOGO_CERTIFICATION
-    #define RX_AGGREGATION 1
-	#define RX_AMSDU 1
-#else
-	#ifdef CONFIG_HIGH_TP_TEST
-    		#define RX_AGGREGATION 1
-	#else
-		#define RX_AGGREGATION 0
-	#endif
-	#define RX_AMSDU 0
-#endif
 
 #if defined(CONFIG_PLATFORM_8711B)
 	#define CONFIG_FW_C2H_PKT
@@ -552,7 +543,7 @@ extern unsigned int g_ap_sta_num;
 			#undef CONFIG_CONCURRENT_MODE
 			#undef CONFIG_AUTO_RECONNECT
 		#endif
-	#define CONFIG_WLAN_SWITCH_MODE         //save memory while switching mode without driver re-init
+	//#define CONFIG_WLAN_SWITCH_MODE         //save memory while switching mode without driver re-init
 	//#define LOW_POWER_WIFI_CONNECT
 	#endif
 	#if defined(CONFIG_PLATFORM_8195BHP)

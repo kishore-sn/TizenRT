@@ -15,30 +15,26 @@
  * language governing permissions and limitations under the License.
  *
  ****************************************************************************/
+#pragma once
 
-#ifndef _WIFI_TEST_UTILS_H__
-#define _WIFI_TEST_UTILS_H__
-#define WO_ERROR(res) printf("[WO][ERR] code(%d) (%d): %s\t%s:%d\n",	\
-							 res, errno, __FUNCTION__, __FILE__, __LINE__)
-
-#define WO_TEST_SIGNAL(conn, queue)										\
-	do {																\
-		printf("[WO] T%d send signal\t %s:%d\n", getpid(), __FUNCTION__, __LINE__); \
-		int ssres = wo_add_queue(conn, queue);							\
-		if (ssres != 0) {												\
-			assert(0);													\
-		}																\
-		sem_post(&queue->signal);										\
+#define WO_TEST_SIGNAL(conn, queue)									\
+	do {															\
+		WT_LOG(TAG, "send signal\t %s:%d", __FUNCTION__, __LINE__); \
+		int ssres = wo_add_queue(conn, queue);						\
+		if (ssres != 0) {											\
+			assert(0);												\
+		}															\
+		sem_post(&queue->signal);									\
 	} while (0)
 
-#define WO_TEST_WAIT(conn, queue)										\
-	do {																\
-		printf("[WO] T%d wait signal\t %s:%d\n", getpid(), __FUNCTION__, __LINE__); \
-		sem_wait(&queue->signal);										\
-		int swres = wo_dequeue(&conn, queue);							\
-		if (swres != 0) {												\
-			assert(0);													\
-		}																\
+#define WO_TEST_WAIT(conn, queue)									\
+	do {															\
+		WT_LOG(TAG, "wait signal\t %s:%d", __FUNCTION__, __LINE__); \
+		sem_wait(&queue->signal);									\
+		int swres = wo_dequeue(&conn, queue);						\
+		if (swres != 0) {											\
+			assert(0);												\
+		}															\
 	} while (0)
 
 struct wo_queue {
@@ -54,4 +50,10 @@ int wo_dequeue(int *conn, struct wo_queue *queue);
 struct wo_queue *wo_create_queue(void);
 void wo_destroy_queue(struct wo_queue *queue);
 
-#endif // #define _WIFI_TEST_UTILS_H__
+void wt_print_conninfo(wifi_manager_info_s *info);
+void wt_print_stats(wifi_manager_stats_s *stats);
+wifi_manager_ap_auth_type_e wt_get_auth_type(const char *method);
+wifi_manager_ap_crypto_type_e wt_get_crypto_type(const char *method);
+void wt_print_wifi_softap_profile(wifi_manager_softap_config_s *config, char *title);
+void wt_print_stats(wifi_manager_stats_s *stats);
+void wt_print_scanlist(wifi_manager_scan_info_s *slist);

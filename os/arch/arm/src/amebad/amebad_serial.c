@@ -114,7 +114,7 @@
 #elif defined(CONFIG_UART1_SERIAL_CONSOLE)
 #define CONSOLE_DEV             g_uart1port             /* UART1 is console */
 #define TTYS0_DEV               g_uart1port             /* UART1 is ttyS0 */
-#define CONSOLE                 UART1_DEV
+#define CONSOLE                 UART3_DEV
 #define UART1_ASSIGNED  1
 #define HAVE_SERIAL_CONSOLE
 #elif defined(CONFIG_UART2_SERIAL_CONSOLE)
@@ -255,6 +255,7 @@ static char g_uart2txbuffer[CONFIG_UART2_TXBUFSIZE];
 #define RTL8721D_UART0_IRQ	(50)
 #define RTL8721D_UART1_IRQ	(51)
 #define RTL8721D_UART_LOG_IRQ	(19)
+#define RTL8721D_UARTLP_IRQ	(25)
 
 #ifdef CONFIG_RTL8721D_UART0
 static struct rtl8721d_up_dev_s g_uart0priv = {
@@ -303,7 +304,7 @@ static struct rtl8721d_up_dev_s g_uart1priv = {
 	.stopbit = 1,
 #endif
 	.baud = CONFIG_UART1_BAUD,
-	.irq = RTL8721D_UART1_IRQ,
+	.irq = RTL8721D_UARTLP_IRQ,
 	.tx = PA_12,
 	.rx = PA_13,
 	.FlowControl = FlowControlNone,
@@ -417,7 +418,6 @@ static int rtl8721d_up_setup(struct uart_dev_s *dev)
 	serial_baud(sdrv[uart_index_get(priv->tx)], priv->baud);
 	serial_format(sdrv[uart_index_get(priv->tx)], priv->bits, priv->parity, priv->stopbit);
 	serial_set_flow_control(sdrv[uart_index_get(priv->tx)], priv->FlowControl, priv->rts, priv->cts);
-	serial_enable(sdrv[uart_index_get(priv->tx)]);
 
 	return OK;
 }
@@ -672,8 +672,29 @@ static bool rtl8721d_up_txready(struct uart_dev_s *dev)
 {
 	struct rtl8721d_up_dev_s *priv = (struct rtl8721d_up_dev_s *)dev->priv;
 	DEBUGASSERT(priv);
-	while (!serial_writable(sdrv[uart_index_get(priv->tx)])) ;
-	return true;
+
+#if defined(CONFIG_UART0_SERIAL_CONSOLE)
+	if (uart_index_get(priv->tx) == 0){
+		while (!serial_writable(sdrv[uart_index_get(priv->tx)]));
+		return true;
+	}
+	else
+#elif defined(CONFIG_UART1_SERIAL_CONSOLE)
+	if (uart_index_get(priv->tx) == 3){
+		while (!serial_writable(sdrv[uart_index_get(priv->tx)]));
+		return true;
+	}
+	else
+#elif defined(CONFIG_UART2_SERIAL_CONSOLE)
+	if (uart_index_get(priv->tx) == 2){
+		while (!serial_writable(sdrv[uart_index_get(priv->tx)]));
+		return true;
+	}
+	else
+#endif
+	{
+		return (serial_writable(sdrv[uart_index_get(priv->tx)]));
+	}
 }
 
 /****************************************************************************

@@ -28,27 +28,8 @@
 #include <tinyara/net/if/wifi.h>
 #include <tinyara/net/if/ethernet.h>
 #include <tinyara/netmgr/netdev_mgr.h>
-
 #include "netdev_mgr_internal.h"
-
-#ifndef CONFIG_NETDEV_NUM
-#define CONFIG_NETDEV_NUM 3
-#endif
-#define NETDEV_MGR_LOOP_NAME "lo"
-#define NETDEV_MGR_WIFI_NAME "wlan"
-#define NETDEV_MGR_ETHERNET_NAME "eth"
-
-static struct netdev g_netdev[CONFIG_NETDEV_NUM];
-static int g_netdev_idx = 0;
-static int g_wlan_idx = 0;
-static int g_eth_idx = 0;
-
-/* protect access of g_netdev and g_netdev_idx
- * netdev is set while system is resetting.
- * and application doesn't require write operation to netdev
- * so if there is no write operation then protection wouldn't be required
- */
-static sem_t g_netdev_lock;
+#include <tinyara/net/netlog.h>
 
 #define NETDEV_LOCK								\
 	do {										\
@@ -59,14 +40,30 @@ static sem_t g_netdev_lock;
 	do {										\
 		sem_post(&g_netdev_lock);				\
 	} while (0)
+#ifndef CONFIG_NETDEV_NUM
+#define CONFIG_NETDEV_NUM 3
+#endif
+#define NETDEV_MGR_LOOP_NAME "lo"
+#define NETDEV_MGR_WIFI_NAME "wlan"
+#define NETDEV_MGR_ETHERNET_NAME "eth"
+#define TAG "[NETMGR]"
 
+static struct netdev g_netdev[CONFIG_NETDEV_NUM];
+static int g_netdev_idx = 0;
+static int g_wlan_idx = 0;
+static int g_eth_idx = 0;
+/* protect access of g_netdev and g_netdev_idx
+ * netdev is set while system is resetting.
+ * and application doesn't require write operation to netdev
+ * so if there is no write operation then protection wouldn't be required
+ */
+static sem_t g_netdev_lock;
 
 /*
  * external function
  */
 // the way to get lwip stack need to be changed.
 extern void *get_netdev_ops_lwip(void);
-
 
 struct netdev *nm_get_netdev(uint8_t *ifname)
 {
@@ -81,6 +78,7 @@ struct netdev *nm_get_netdev(uint8_t *ifname)
 int nm_foreach(tr_netdev_callback_t callback, void *arg)
 {
 	if (!callback) {
+		NET_LOGE(TAG, "invalid callback\n");
 		return -1;
 	}
 
@@ -97,7 +95,6 @@ int nm_foreach(tr_netdev_callback_t callback, void *arg)
 	return ret;
 }
 
-
 int _nm_register_loop(struct netdev *dev, struct netdev_config *config)
 {
 	int res = 0;
@@ -111,11 +108,12 @@ int _nm_register_loop(struct netdev *dev, struct netdev_config *config)
 	return res;
 }
 
-
 struct netdev *nm_register(struct netdev_config *config)
 {
 	//NETDEV_LOCK;
 	if (g_netdev_idx == CONFIG_NETDEV_NUM) {
+		NET_LOGE(TAG, "No available netdev slot %d %d\n",
+					g_netdev_idx, CONFIG_NETDEV_NUM);
 		return NULL;
 	}
 
@@ -128,7 +126,7 @@ struct netdev *nm_register(struct netdev_config *config)
 		dev->type = NM_LOOPBACK;
 		int res = _nm_register_loop(dev, config);
 		if (res < 0) {
-			ndbg("initialize loopback fail\n");
+			NET_LOGE(TAG, "initialize loopback fail\n");
 			return NULL;
 		}
 		return dev;
@@ -143,14 +141,14 @@ struct netdev *nm_register(struct netdev_config *config)
 		dev->type = NM_ETHERNET;
 		dev->t_ops.eth = config->t_ops.eth;
 	} else {
-		ndbg("unknown type\n");
+		NET_LOGE(TAG, "unknown type\n");
 		return NULL;
 	}
 
 	// to do calculate exact size of tx_buf
 	dev->tx_buf = (uint8_t *)kmm_malloc(config->mtu + 12); // 12 is padding.
 	if (!dev->tx_buf) {
-		ndbg("create txbuf fail(%d)\n", config->mtu + 12);
+		NET_LOGE(TAG, "create txbuf fail(%d)\n", config->mtu + 12);
 		return NULL;
 	}
 	struct nic_config nconfig;
@@ -168,27 +166,21 @@ struct netdev *nm_register(struct netdev_config *config)
 
 	nconfig.is_default = config->is_default;
 	nconfig.loopback = 0;
+	nconfig.io_ops = *config->ops;
 
 	struct netdev_ops *ops = get_netdev_ops_lwip();
-
-	ops->linkoutput = config->ops->linkoutput;
-	ops->igmp_mac_filter = config->ops->igmp_mac_filter;
-
 	dev->ops = (void *)ops;
 	ops->init_nic(dev, &nconfig);
-
 	dev->priv = config->priv;
 
 	//NETDEV_UNLOCK;
 	return dev;
 }
 
-
 int nm_count(void)
 {
 	return g_netdev_idx;
 }
-
 
 int nm_ifup(struct netdev *dev)
 {
@@ -196,57 +188,54 @@ int nm_ifup(struct netdev *dev)
 	if (dev->type == NM_WIFI) {
 		ret = dev->t_ops.wl->init(dev);
 		if (ret < 0) {
-			ndbg("fail to up wi-fi driver interface\n");
+			NET_LOGE(TAG, "fail to up wi-fi driver interface\n");
 			return -2;
 		}
 	} else if (dev->type == NM_ETHERNET) {
 		ret = dev->t_ops.eth->init(dev);
 		if (ret < 0) {
-			ndbg("fail to intialize ethernet driver interface\n");
+			NET_LOGE(TAG, "fail to intialize ethernet driver interface\n");
 			return -1;
 		}
 		ret = dev->t_ops.eth->enable(dev);
 		if (ret < 0) {
-			ndbg("fail to up ethernet driver interface\n");
+			NET_LOGE(TAG, "fail to up ethernet driver interface\n");
 			return -1;
 		}
 	}
 
 	ret = ((struct netdev_ops *)(dev->ops))->ifup(dev);
 	if (ret < 0) {
-		ndbg("fail to up network interface\n");
+		NET_LOGE(TAG, "fail to link up network interface\n");
 		return -1;
 	}
-	
 	return 0;
 }
-
 
 int nm_ifdown(struct netdev *dev)
 {
 	int ret = ((struct netdev_ops *)(dev->ops))->ifdown(dev);
 	if (ret < 0) {
-		ndbg("fail to down network interface\n");
+		NET_LOGE(TAG, "fail to link down down network interface\n");
 		return -1;
 	}
 
 	if (dev->type == NM_WIFI) {
 		ret = dev->t_ops.wl->deinit(dev);
 		if (ret < 0) {
-			ndbg("fail to down driver interface\n");
+			NET_LOGE(TAG, "fail to deinit wi-fi driver interface\n");
 			return -2;
 		}
 	} else if (dev->type == NM_ETHERNET) {
 		ret = dev->t_ops.eth->deinit(dev);
 		if (ret < 0) {
-			ndbg("fail to deinit etherent driver\n");
+			NET_LOGE(TAG, "fail to deinit etherent driver\n");
 			return -1;
 		}
 	}
 
 	return 0;
 }
-
 
 void nm_init(void)
 {

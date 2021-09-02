@@ -24,7 +24,11 @@
 #include <ifaddrs.h>
 #include <tinyara/lwnl/lwnl.h>
 #include <tinyara/netmgr/netdev_mgr.h>
+#include <tinyara/net/if/wifi.h>
 #include "netdev_mgr_internal.h"
+#include <tinyara/net/netlog.h>
+
+#define TAG "[NETMGR]"
 
 extern int netdev_handle_wifi(struct netdev *dev, lwnl_req cmd, void *data, uint32_t data_len);
 extern int netdev_handle_ethernet(struct netdev *dev, lwnl_req cmd, void *data, uint32_t data_len);
@@ -40,6 +44,7 @@ static int _netdev_getifaddr(struct netdev *dev, void *arg)
 	struct ifaddrs *addr = NULL;
 	int res = ND_NETOPS(dev, get_ifaddrs)(dev, &addr);
 	if (res < 0) {
+		NET_LOGE(TAG, "get_ifaddrs fail\n");
 		return -1;
 	}
 
@@ -60,7 +65,7 @@ static int _netdev_getifaddr(struct netdev *dev, void *arg)
 static int _handle_common(lwnl_msg *msg)
 {
 	int res = 0;
-	if (msg->req_type == LWNL_GET_ADDR_INFO) {
+	if (msg->req_type.type == LWNL_REQ_COMMON_GETADDRINFO) {
 		struct ifaddr_msg imsg = {NULL, 0};
 		int ret = nm_foreach(_netdev_getifaddr, (void *)&imsg);
 		if (ret == OK) {
@@ -69,7 +74,7 @@ static int _handle_common(lwnl_msg *msg)
 			res = -1;
 		}
 	} else {
-		ndbg("invalid request type");
+		NET_LOGE(TAG, "invalid request type");
 		res = -1;
 	}
 
@@ -79,26 +84,31 @@ static int _handle_common(lwnl_msg *msg)
 int netdev_req_handle(const char *msg, size_t msg_len)
 {
 	lwnl_msg *lmsg = (lwnl_msg *)msg;
-	lwnl_result_e *res = &lmsg->res;
-
 	struct netdev *dev = NULL;
-	dev = (struct netdev *)nm_get_netdev(lmsg->name);
-	if (!dev) {
+
+	if (!strncmp((const char *)lmsg->name, LWNL_INTF_NAME, strlen(LWNL_INTF_NAME) + 1)) {
+		int *res = (int *)lmsg->result;
 		*res = _handle_common(lmsg);
 		return 0;
 	}
 
-	switch (dev->type) {
-	case NM_WIFI:
-		*res = netdev_handle_wifi(dev, lmsg->req_type, lmsg->data, lmsg->data_len);
-		break;
-	case NM_ETHERNET:
-		*res = netdev_handle_ethernet(dev, lmsg->req_type, lmsg->data, lmsg->data_len);
-		break;
-	default:
+	dev = (struct netdev *)nm_get_netdev(lmsg->name);
+	if (!dev) {
 		return -ENOSYS;
 	}
-	if (*res != LWNL_SUCCESS) {
+
+	switch (dev->type) {
+	case NM_WIFI: {
+		trwifi_result_e *res = (trwifi_result_e *)lmsg->result;
+		*res = netdev_handle_wifi(dev, lmsg->req_type, lmsg->data, lmsg->data_len);
+	}
+		break;
+	case NM_ETHERNET: {
+		int *res = (int *)lmsg->result;
+		*res = netdev_handle_ethernet(dev, lmsg->req_type, lmsg->data, lmsg->data_len);
+	}
+		break;
+	default:
 		return -ENOSYS;
 	}
 	return 0;

@@ -21,9 +21,9 @@
 #include <net/if.h>
 #include <tinyara/lwnl/lwnl.h>
 #include "netmgr/netstack.h"
-#ifdef CONFIG_NET_LOCAL
-#include "utils/utils.h"
-#endif
+#include <tinyara/net/netlog.h>
+
+#define TAG "[NETMGR]"
 
 struct tr_netmgr {
 	void *dev;
@@ -32,7 +32,10 @@ struct tr_netmgr {
 static struct tr_netmgr g_netmgr;
 
 extern int netdev_mgr_start(void);
-
+#ifdef CONFIG_VIRTUAL_WLAN
+extern void vwifi_start(void);
+#endif
+extern int trwifi_run_handler(void);
 /****************************************************************************
  * Name: netmgr_setup
  *
@@ -55,7 +58,6 @@ extern int netdev_mgr_start(void);
  *   None
  *
  ****************************************************************************/
-
 void net_setup(void)
 {
 	int res = 0;
@@ -64,20 +66,20 @@ void net_setup(void)
 	if (!g_netmgr.dev) {
 		g_netmgr.dev = (void *)kmm_zalloc(sizeof(struct lwnl_lowerhalf_s));
 		if (!g_netmgr.dev) {
-			ndbg("!!!alloc dev fail!!!\n");
+			NET_LOGE(TAG, "!!!alloc dev fail!!!\n");
 		}
 	}
 
 	res = lwnl_register((struct lwnl_lowerhalf_s *)g_netmgr.dev);
 	if (res < 0) {
-		ndbg("!!!register device fail!!!\n");
+		NET_LOGE(TAG, "!!!register device fail!!!\n");
 	}
 #endif
 
 	struct netstack *stk = get_netstack(TR_SOCKET);
 	NETSTACK_CALL_RET(stk, init, (NULL), res);
 	if (res < 0) {
-		ndbg("!!!initialize stack fail!!!\n");
+		NET_LOGE(TAG, "!!!initialize stack fail!!!\n");
 	}
 	netdev_mgr_start();
 }
@@ -98,21 +100,23 @@ void net_setup(void)
  *   None
  *
  ****************************************************************************/
-
 void net_initialize(void)
 {
-#ifdef CONFIG_NET_LOCAL
-	/* Initialize the local, "Unix domain" socket support */
-
-	local_initialize();
+#ifdef CONFIG_VIRTUAL_WLAN
+	vwifi_start();
 #endif
-
 	/*  start network stack */
 	struct netstack *stk = get_netstack(TR_SOCKET);
 	int res = -1;
 	NETSTACK_CALL_RET(stk, start, (NULL), res);
 	if (res < 0) {
-		ndbg("!!!start stack fail!!!\n");
+		NET_LOGE(TAG, "!!!start stack fail!!!\n");
+		assert(0);
 	}
+	if (trwifi_run_handler() != 0) {
+		NET_LOGE(TAG, "!!!start event handler fail!!!\n");
+		assert(0);
+	}
+
 	return;
 }

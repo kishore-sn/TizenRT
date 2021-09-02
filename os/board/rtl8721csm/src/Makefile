@@ -96,10 +96,13 @@ include component/common/bluetooth/realtek/sdk/board/common/src/Make.defs
 include component/common/bluetooth/realtek/sdk/src/ble/profile/client/Make.defs
 include component/common/bluetooth/realtek/sdk/src/ble/profile/server/Make.defs
 ifeq ($(CONFIG_AMEBAD_BLE_PERIPHERAL),y)
-include component/common/bluetooth/realtek/sdk/example/da_ble_peripheral/Make.defs
+include component/common/bluetooth/realtek/sdk/example/ble_peripheral/Make.defs
 endif
 ifeq ($(CONFIG_AMEBAD_BLE_CENTRAL),y)
-include component/common/bluetooth/realtek/sdk/example/da_ble_central/Make.defs
+include component/common/bluetooth/realtek/sdk/example/ble_central/Make.defs
+endif
+ifeq ($(CONFIG_AMEBAD_BLE_SCATTERNET),y)
+include component/common/bluetooth/realtek/sdk/example/ble_scatternet/Make.defs
 endif
 endif
 
@@ -146,7 +149,6 @@ CFLAGS += -I$(TOPDIR)/board/$(CONFIG_ARCH_BOARD)/src/component/soc/realtek/ameba
 CFLAGS += -I$(TOPDIR)/board/$(CONFIG_ARCH_BOARD)/src/component/soc/realtek/amebad/swlib/string
 CFLAGS += -I$(TOPDIR)/board/$(CONFIG_ARCH_BOARD)/src/component/soc/realtek/amebad/app/monitor/include
 CFLAGS += -I$(TOPDIR)/board/$(CONFIG_ARCH_BOARD)/src/component/soc/realtek/amebad/app/xmodem
-CFLAGS += -I$(TOPDIR)/arch/$(CONFIG_ARCH)/src
 CFLAGS += -I$(TOPDIR)/arch/$(CONFIG_ARCH)/src/armv8-m
 CFLAGS += -I$(PROJ_DIR)/inc/inc_hp
 CFLAGS += -I$(COMPONENT_DIR)/soc/realtek/amebad/cmsis
@@ -156,18 +158,13 @@ CFLAGS += -I$(COMPONENT_DIR)/common/mbed/api
 CFLAGS += -I$(COMPONENT_DIR)/common/mbed/targets/hal/rtl8721d
 CFLAGS += -I$(COMPONENT_DIR)/common/api/platform
 CFLAGS += -I$(COMPONENT_DIR)/common/api
-CFLAGS += -I$(COMPONENT_DIR)/common/api/wifi
 CFLAGS += -I$(COMPONENT_DIR)/common/api/wifi/rtw_wpa_supplicant/wpa_supplicant
-CFLAGS += -I$(COMPONENT_DIR)/common/network
 CFLAGS += -I$(COMPONENT_DIR)/common/drivers/wlan/realtek/include
 CFLAGS += -I$(COMPONENT_DIR)/common/drivers/wlan/realtek/src/osdep
-CFLAGS += -I$(COMPONENT_DIR)/common/drivers/wlan/realtek/src/core/option
 CFLAGS += -I$(COMPONENT_DIR)/common/drivers/wlan/realtek/wlan_ram_map/rom
 CFLAGS += -I$(COMPONENT_DIR)/os/os_dep/include
 CFLAGS += -I$(COMPONENT_DIR)/os/tizenrt
-CFLAGS += -I$(TOPDIR)/net/lwip
 CFLAGS += -I$(DIR_WIFI)/rtw_wpa_supplicant/src
-CFLAGS += -I$(DIR_WIFI)/rtw_wpa_supplicant/wpa_supplicant
 CFLAGS += -I$(COMPONENT_DIR)/soc/realtek/amebad/misc
 CFALGS += -I$(DIR_CRYPTO)/../include
 CFLAGS += -I$(DIR_FW)/../include
@@ -175,16 +172,14 @@ CFLAGS += -I$(TOPDIR)/net/netmgr
 ifeq ($(CONFIG_AMEBAD_BLE),y)
 CFLAGS += -I$(DIR_BT)/inc
 CFLAGS += -I$(DIR_BT)/src/mcu/module/data_uart_cmd
-CFLAGS += -I$(DIR_BT)/example/da_ble_peripheral
-CFLAGS += -I$(DIR_BT)/example/da_ble_central
-CFLAGS += -I$(TOPDIR)/../da_include/ble
-CFLAGS += -I$(TOPDIR)/../da_include/da_core
+CFLAGS += -I$(DIR_BT)/example/ble_peripheral
+CFLAGS += -I$(DIR_BT)/example/ble_central
+CFLAGS += -I$(DIR_BT)/example/ble_scatternet
 endif
 
 ifeq ($(CONFIG_USBD_MSC),y)
 CFLAGS += -I$(BASEDIR)/component/common/drivers/sdio/realtek/sdio_host/inc
 endif
-CFLAGS += -I$(DIR_OTG)/class
 CFLAGS += -I$(DIR_OTG)/core/inc
 CFLAGS += -I$(DIR_OTG)/composite/inc
 

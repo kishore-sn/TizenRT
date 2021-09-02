@@ -63,7 +63,6 @@ int lwnl_message_handle(const char *msg, int msg_len)
 	}
 
 	// ToDo : if ethernet is supported then ops should be checked
-
 	switch (req) {
 	case LWNL_INIT:
 	{
@@ -116,7 +115,7 @@ int lwnl_message_handle(const char *msg, int msg_len)
 	break;
 	case LWNL_SCAN_AP:
 	{
-		trwifi_ap_config_s *config = (trwifi_ap_config_s *)data;
+		trwifi_scan_config_s *config = (trwifi_scan_config_s *)data;
 		res = ((struct trwifi_ops *)(dev->ops))->scan_ap(dev, config);
 	}
 	break;

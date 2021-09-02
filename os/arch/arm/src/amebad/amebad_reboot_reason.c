@@ -56,29 +56,26 @@
 #include <tinyara/config.h>
 
 #include <stdbool.h>
+#include <debug.h>
 #include <tinyara/reboot_reason.h>
 #include "ameba_soc.h"
+#include "amebad_reboot_reason.h"
 /****************************************************************************
  * Public functions
  ****************************************************************************/
 #ifdef CONFIG_SYSTEM_REBOOT_REASON
 
-static reboot_reason_code_t backup_reg;
+static reboot_reason_code_t reboot_reason;
 
-void up_reboot_reason_init(void)
-{
-	/* Read the same backup register for the boot reason */
-	backup_reg = BKUP_Read(BKUP_REG1);
-	BKUP_Write(BKUP_REG1, REBOOT_REASON_INITIALIZED);
-
-}
-
-reboot_reason_code_t up_reboot_reason_read(void)
+static reboot_reason_code_t up_reboot_reason_get_hw_value(void)
 {
 	u32 boot_reason = 0;
 
-	if (backup_reg != REBOOT_REASON_INITIALIZED) {
-		return backup_reg;
+	/* Read the same backup register for the boot reason */
+	boot_reason = BKUP_Read(BKUP_REG1);
+
+	if ((boot_reason != REBOOT_REASON_INITIALIZED) && (boot_reason != 0)) {
+		return boot_reason;
 	} else {
 		/* Read AmebaD Boot Reason, WDT and HW reset supported */
 		boot_reason = BOOT_Reason();
@@ -92,24 +89,54 @@ reboot_reason_code_t up_reboot_reason_read(void)
 		else if ((boot_reason & BIT_BOOT_KM4WDG_RESET_HAPPEN) || (boot_reason & BIT_BOOT_WDG_RESET_HAPPEN)) {
 			return REBOOT_SYSTEM_WATCHDOG;
 		}
+
+		/* KM4 deep sleep handled by KM0 (KM4 sleep + KM0 tickless, KM4 deep sleep + KM0 deep sleep AON) */
+		else if (boot_reason & BIT_BOOT_DSLP_RESET_HAPPEN) {
+			return REBOOT_SYSTEM_DSLP_RESET;
+		}
+
+		/* KM4 or KM0 System reset */
+		else if ((boot_reason & BIT_BOOT_KM4SYS_RESET_HAPPEN) || (boot_reason & BIT_BOOT_SYS_RESET_HAPPEN)) {
+			return REBOOT_SYSTEM_SYS_RESET_CORE;
+		}
+
+		/* Brownout reset */
+		else if (boot_reason & BIT_BOOT_BOD_RESET_HAPPEN) {
+			return REBOOT_SYSTEM_BOD_RESET;
+		}
 	}
 
 	return REBOOT_UNKNOWN;
 }
 
+void up_reboot_reason_init(void)
+{
+	reboot_reason = up_reboot_reason_get_hw_value();
+	BKUP_Write(BKUP_REG1, REBOOT_REASON_INITIALIZED);
+}
+
+reboot_reason_code_t up_reboot_reason_read(void)
+{
+	int reason = reboot_reason;
+	rrvdbg("Read Reboot Reason : %d\n", reason);
+	return reason;
+}
+
 void up_reboot_reason_write(reboot_reason_code_t reason)
 {
+	rrvdbg("Write Reboot Reason : %d\n", reason);
 	/* Set the specific bit in BKUP_REG1 */
 	BKUP_Write(BKUP_REG1, (u32)reason);
 }
 
 void up_reboot_reason_clear(void)
 {
+	rrvdbg("Clear Reboot Reason\n");
 	/* Reboot Reason Clear API writes the REBOOT_REASON_INITIALIZED by default.
 	 * If chip vendor needs another thing to do, please change the below.
 	 */
 	up_reboot_reason_write(REBOOT_REASON_INITIALIZED);
-	backup_reg = REBOOT_REASON_INITIALIZED;
+	reboot_reason = REBOOT_REASON_INITIALIZED;
 }
 
 bool up_reboot_reason_is_written(void)

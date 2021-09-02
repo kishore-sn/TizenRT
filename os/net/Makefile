@@ -58,11 +58,7 @@ ifeq ($(CONFIG_NET),y)
 # Basic networking support
 
 NET_ASRCS   =
-ifeq ($(CONFIG_NET_NETMGR),y)
 NET_CSRCS   = net_initialize_netmgr.c
-else
-NET_CSRCS   = net_initialize.c
-endif
 
 #LWIP stack support
 
@@ -79,18 +75,19 @@ SOCK_CSRCS  =
 NETDEV_ASRCS =
 NETDEV_CSRCS =
 
+BLEDEV_ASRCS =
+BLEDEV_CSRCS =
+
 BLUETOOTH_ASRCS =
 BLUETOOTH_CSRCS =
 
 VPATH =
 DEPPATH = --dep-path .
 
-ifeq ($(CONFIG_NET_NETMGR),y)
 include netmgr/Make.defs
-else
-include netdev/Make.defs
-include mac/Make.defs
-include socket/Make.defs
+
+ifeq ($(CONFIG_BLE_MANAGER),y)
+include blemgr/Make.defs
 endif
 
 ifeq ($(CONFIG_BLUETOOTH),y)
@@ -113,7 +110,6 @@ endif
 include lwip/src/netif/ppp/Make.defs
 include lwip/sys/arch/Make.defs
 endif
-
 endif
 
 ifeq ($(CONFIG_NET_LOCAL),y)
@@ -122,10 +118,10 @@ include utils/Make.defs
 endif
 
 
-ASRCS		= $(SOCK_ASRCS) $(NETDEV_ASRCS) $(NET_ASRCS) $(TLS_ASRCS) $(LWIP_ASRCS) $(BLUETOOTH_ASRCS)
+ASRCS		= $(SOCK_ASRCS) $(BLEDEV_ASRCS) $(NETDEV_ASRCS) $(NET_ASRCS) $(TLS_ASRCS) $(LWIP_ASRCS) $(BLUETOOTH_ASRCS)
 AOBJS		= $(ASRCS:.S=$(OBJEXT))
 
-CSRCS		= $(SOCK_CSRCS) $(NETDEV_CSRCS) $(NET_CSRCS) $(TLS_CSRCS) $(LWIP_CSRCS) $(BLUETOOTH_CSRCS)
+CSRCS		= $(SOCK_CSRCS) $(BLEDEV_CSRCS) $(NETDEV_CSRCS) $(NET_CSRCS) $(TLS_CSRCS) $(LWIP_CSRCS) $(BLUETOOTH_CSRCS)
 COBJS		= $(CSRCS:.c=$(OBJEXT))
 
 SRCS		= $(ASRCS) $(CSRCS)
@@ -134,6 +130,7 @@ OBJS		= $(AOBJS) $(COBJS)
 BIN		= libnet$(LIBEXT)
 
 all:	$(BIN)
+.PHONY: depend clean distclean
 
 $(AOBJS): %$(OBJEXT): %.S
 	$(call ASSEMBLE, $<, $@)

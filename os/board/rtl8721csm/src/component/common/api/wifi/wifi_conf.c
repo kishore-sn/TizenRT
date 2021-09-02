@@ -156,6 +156,8 @@ static struct task_struct wifi_autoreconnect_task;
 #endif
 #endif
 
+#define MAX_STA_LIMIT 1
+
 /******************************************************
  *               Function Definitions
  ******************************************************/
@@ -201,6 +203,8 @@ static int wifi_connect_local(rtw_network_info_t *pWifi)
 			break;
 		case RTW_SECURITY_WPA_TKIP_PSK:
 		case RTW_SECURITY_WPA2_TKIP_PSK:
+		case RTW_SECURITY_WPA_MIXED_PSK:
+		case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
 			ret = wext_set_auth_param(WLAN0_NAME, IW_AUTH_80211_AUTH_ALG, IW_AUTH_ALG_OPEN_SYSTEM);
 			if(ret == 0)
 				ret = wext_set_key_ext(WLAN0_NAME, IW_ENCODE_ALG_TKIP, NULL, 0, 0, 0, 0, NULL, 0);
@@ -210,7 +214,8 @@ static int wifi_connect_local(rtw_network_info_t *pWifi)
 		case RTW_SECURITY_WPA_AES_PSK:
 		case RTW_SECURITY_WPA2_AES_PSK:
 		case RTW_SECURITY_WPA2_MIXED_PSK:
-		case RTW_SECURITY_WPA_WPA2_MIXED:
+		case RTW_SECURITY_WPA_WPA2_AES_PSK:
+		case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
 #ifdef CONFIG_SAE_SUPPORT
 		case RTW_SECURITY_WPA3_AES_PSK:			
 #endif			
@@ -254,6 +259,8 @@ static int wifi_connect_bssid_local(rtw_network_info_t *pWifi)
 			break;
 		case RTW_SECURITY_WPA_TKIP_PSK:
 		case RTW_SECURITY_WPA2_TKIP_PSK:
+		case RTW_SECURITY_WPA_MIXED_PSK:
+		case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
 			ret = wext_set_auth_param(WLAN0_NAME, IW_AUTH_80211_AUTH_ALG, IW_AUTH_ALG_OPEN_SYSTEM);
 			if(ret == 0)
 				ret = wext_set_key_ext(WLAN0_NAME, IW_ENCODE_ALG_TKIP, NULL, 0, 0, 0, 0, NULL, 0);
@@ -263,6 +270,8 @@ static int wifi_connect_bssid_local(rtw_network_info_t *pWifi)
 		case RTW_SECURITY_WPA_AES_PSK:
 		case RTW_SECURITY_WPA2_AES_PSK:
 		case RTW_SECURITY_WPA2_MIXED_PSK:
+		case RTW_SECURITY_WPA_WPA2_AES_PSK:
+		case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
 			ret = wext_set_auth_param(WLAN0_NAME, IW_AUTH_80211_AUTH_ALG, IW_AUTH_ALG_OPEN_SYSTEM);
 			if(ret == 0)
 				ret = wext_set_key_ext(WLAN0_NAME, IW_ENCODE_ALG_CCMP, NULL, 0, 0, 0, 0, NULL, 0);
@@ -372,7 +381,7 @@ static void wifi_disconn_hdl( char* buf, int buf_len, int flags, void* userdata)
 			if(rtw_join_status & JOIN_NO_NETWORKS)
 				error_flag = RTW_NONE_NETWORK;
 
-			else if(rtw_join_status == 0)
+			else if(rtw_join_status == JOIN_CONNECTING)
 		 		error_flag = RTW_CONNECT_FAIL;
 
 		}else if(join_user_data->network_info.security_type == RTW_SECURITY_WPA2_AES_PSK){
@@ -380,7 +389,7 @@ static void wifi_disconn_hdl( char* buf, int buf_len, int flags, void* userdata)
 			if(rtw_join_status & JOIN_NO_NETWORKS)
 				error_flag = RTW_NONE_NETWORK;
 
-			else if(rtw_join_status == 0)
+			else if(rtw_join_status == JOIN_CONNECTING)
 		 		error_flag = RTW_CONNECT_FAIL;
 
 			else if(rtw_join_status == (JOIN_COMPLETE | JOIN_SECURITY_COMPLETE | JOIN_ASSOCIATED | JOIN_AUTHENTICATED | JOIN_LINK_READY | JOIN_CONNECTING))
@@ -405,7 +414,7 @@ static void wifi_disconn_hdl( char* buf, int buf_len, int flags, void* userdata)
 		memset(&reason, 0, sizeof(rtk_reason_t));
 
 		if (g_link_down) {
-			ndbg("RTK_API rtk_link_event_handler send link_down\n");
+			nvdbg("RTK_API rtk_link_event_handler send link_down\n");
 			g_link_down(&reason);
 		}
 #endif
@@ -529,6 +538,8 @@ int8_t WiFiRegisterLinkCallback(rtk_network_link_callback_t link_up, rtk_network
 
 	return RTK_STATUS_SUCCESS;
 }
+extern void linkup_handler(rtk_reason_t *reason);
+extern void linkdown_handler(rtk_reason_t *reason);
 #endif
 int wifi_connect(
 	char 				*ssid,
@@ -566,9 +577,13 @@ int wifi_connect(
              ( password_len <  RTW_MIN_PSK_LEN ) ) &&
            ( ( security_type == RTW_SECURITY_WPA_TKIP_PSK ) ||
              ( security_type == RTW_SECURITY_WPA_AES_PSK ) ||
+             ( security_type == RTW_SECURITY_WPA_MIXED_PSK ) ||
              ( security_type == RTW_SECURITY_WPA2_AES_PSK ) ||
              ( security_type == RTW_SECURITY_WPA2_TKIP_PSK ) ||
              ( security_type == RTW_SECURITY_WPA2_MIXED_PSK )||
+             ( security_type == RTW_SECURITY_WPA_WPA2_TKIP_PSK)||
+             ( security_type == RTW_SECURITY_WPA_WPA2_AES_PSK)||
+             ( security_type == RTW_SECURITY_WPA_WPA2_MIXED_PSK)||
              ( security_type == RTW_SECURITY_WPA3_AES_PSK)) )) {
              error_flag = RTW_WRONG_PASSWORD;
 		return RTW_INVALID_KEY;
@@ -714,8 +729,8 @@ int wifi_connect(
 
 				if (g_link_up) {
 					if (reason.reason_code)
-						ndbg("reason.reason_code=%d\n", reason.reason_code);
-					ndbg("RTK_API %s() send link_up\n", __func__);
+						nvdbg("reason.reason_code=%d\n", reason.reason_code);
+					nvdbg("RTK_API %s() send link_up\n", __func__);
 					g_link_up(&reason);
 				}
 #endif
@@ -731,8 +746,8 @@ int wifi_connect(
 				reason.reason_code = RTK_STATUS_ERROR;
 				if (g_link_up) {
 					if (reason.reason_code)
-						ndbg("reason.reason_code=%d\n", reason.reason_code);
-					ndbg("RTK_API %s() send link_up\n", __func__);
+						nvdbg("reason.reason_code=%d\n", reason.reason_code);
+					nvdbg("RTK_API %s() send link_up\n", __func__);
 					g_link_up(&reason);
 				}
 #endif
@@ -747,9 +762,9 @@ int wifi_connect(
 
 				if (g_link_up) {
 					if (reason.reason_code) {
-						ndbg("reason.reason_code=%d\n", reason.reason_code);
+						nvdbg("reason.reason_code=%d\n", reason.reason_code);
 					}
-					ndbg("RTK_API %s() send link_up\n", __func__);
+					nvdbg("RTK_API %s() send link_up\n", __func__);
 					g_link_up(&reason);
 				}
 #endif
@@ -821,9 +836,13 @@ int wifi_connect_bssid(
              ( password_len <  RTW_MIN_PSK_LEN ) ) &&
            ( ( security_type == RTW_SECURITY_WPA_TKIP_PSK ) ||
              ( security_type == RTW_SECURITY_WPA_AES_PSK ) ||
+             ( security_type == RTW_SECURITY_WPA_MIXED_PSK ) ||
              ( security_type == RTW_SECURITY_WPA2_AES_PSK ) ||
              ( security_type == RTW_SECURITY_WPA2_TKIP_PSK ) ||
-             ( security_type == RTW_SECURITY_WPA2_MIXED_PSK ) ) ) ) {
+             ( security_type == RTW_SECURITY_WPA2_MIXED_PSK ) ||
+             ( security_type == RTW_SECURITY_WPA_WPA2_TKIP_PSK)||
+             ( security_type == RTW_SECURITY_WPA_WPA2_AES_PSK)||
+             ( security_type == RTW_SECURITY_WPA_WPA2_MIXED_PSK)) ) ) {
 		return RTW_INVALID_KEY;
 	}
 	
@@ -1288,6 +1307,18 @@ int wifi_on(rtw_mode_t mode)
 	static int event_init = 0;
 
 	device_mutex_lock(RT_DEV_LOCK_WLAN);
+
+#if defined(CONFIG_PLATFORM_TIZENRT_OS)
+	ret = WiFiRegisterLinkCallback(&linkup_handler, &linkdown_handler);
+	if (ret != RTK_STATUS_SUCCESS) {
+		RTW_API_INFO("[RTK] Link callback handles: register failed !\n");
+		device_mutex_unlock(RT_DEV_LOCK_WLAN);
+		return -1;
+	} else {
+		RTW_API_INFO("[RTK] Link callback handles: registered\n");
+	}
+#endif
+
 	if(rltk_wlan_running(WLAN0_IDX)) {
 		RTW_API_INFO("\n\rWIFI is already running");
 		device_mutex_unlock(RT_DEV_LOCK_WLAN);
@@ -1499,7 +1530,12 @@ int wifi_set_mode(rtw_mode_t mode)
 	}
 #endif
 #endif
-
+#if defined(CONFIG_PLATFORM_TIZENRT_OS)
+	if (wifi_mode == RTW_MODE_AP) {
+		RTW_API_INFO("\nMax sta: %d\n", MAX_STA_LIMIT);
+		wext_set_sta_num(MAX_STA_LIMIT);
+	}
+#endif
 	return 0;
 Exit:
 #ifdef CONFIG_WLAN_SWITCH_MODE
@@ -1565,7 +1601,7 @@ static void wifi_ap_sta_assoc_hdl( char* buf, int buf_len, int flags, void* user
 	}
 
 	if (g_link_up) {
-		ndbg("RTK_API rtk_link_event_handler send link_up\n");
+		nvdbg("RTK_API rtk_link_event_handler send link_up\n");
 		g_link_up(&reason);
 	}
 #endif
@@ -1585,7 +1621,7 @@ static void wifi_ap_sta_disassoc_hdl( char* buf, int buf_len, int flags, void* u
 		memcpy(&(reason.bssid), buf, 17);
 	}
 	if (g_link_down) {
-		ndbg("RTK_API rtk_handle_disconnect send link_down\n");
+		nvdbg("RTK_API rtk_handle_disconnect send link_down\n");
 		g_link_down(&reason);
 	}
 #endif

@@ -28,173 +28,147 @@
 #include <debug.h>
 #include <net/if.h>
 #include <tinyara/lwnl/lwnl.h>
-#include <tinyara/wifi/wifi_utils.h>
 #include <tinyara/net/if/wifi.h>
-#include "wifi_manager_log.h"
+#include <tinyara/net/netlog.h>
 
-#ifdef CONFIG_NET_NETMGR
 #define WU_INTF_NAME "wlan0"
-#else
-#define WU_INTF_NAME "wl1"
-#endif
+#define TAG "[WM]"
 
-typedef enum {
-	WIFI_UTILS_LWNL_SUCCESS,
-	WIFI_UTILS_LWNL_OPEN_FAILED,
-	WIFI_UTILS_LWNL_READ_FAILED,
-	WIFI_UTILS_LWNL_WRITE_FAILED,
-} wu_lwnl_status_e;
-
-static inline wu_lwnl_status_e _send_msg(lwnl_msg *msg)
+static inline int _send_msg(lwnl_msg *msg)
 {
 	int fd = socket(AF_LWNL, SOCK_RAW, LWNL_ROUTE);
 	if (fd < 0) {
-		return -WIFI_UTILS_LWNL_OPEN_FAILED;
+		NET_LOGE(TAG, "send lwnl msg open error\n");
+		return -1;
 	}
 
 	int res = write(fd, msg, sizeof(*msg));
 	close(fd);
-
 	if (res < 0) {
-		return -WIFI_UTILS_LWNL_WRITE_FAILED;
+		NET_LOGE(TAG, "send lwnl msg write error\n");
+		return -2;
 	}
-
-	return WIFI_UTILS_LWNL_SUCCESS;
+	return 0;
 }
 
-wifi_utils_result_e wifi_utils_init(void)
+trwifi_result_e wifi_utils_init(void)
 {
-	WM_ENTER;
-
-	/* Start to send ioctl */
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_INIT, 0, NULL, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_INIT}, 0, NULL, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_deinit(void)
+trwifi_result_e wifi_utils_deinit(void)
 {
-	WM_ENTER;
-	wifi_utils_result_e wuret = WIFI_UTILS_SUCCESS;
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_DEINIT, 0, NULL, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		wuret = WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_DEINIT}, 0, NULL, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return wuret;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_scan_ap(void *arg)
+trwifi_result_e wifi_utils_scan_ap(void *arg)
 {
-	WM_ENTER;
-	wifi_utils_ap_config_s *config = NULL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	trwifi_ap_config_s *config = NULL;
 	if (arg) {
-		config = (wifi_utils_ap_config_s *)arg;
+		config = (trwifi_ap_config_s *)arg;
 	}
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_SCAN_AP, sizeof(wifi_utils_ap_config_s), (void *)config, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_SCANAP},
+					sizeof(trwifi_ap_config_s), (void *)config, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_register_callback(wifi_utils_cb_s *cbk)
+trwifi_result_e wifi_utils_connect_ap(trwifi_ap_config_s *ap_connect_config, void *arg)
 {
-	return WIFI_UTILS_SUCCESS;
-}
-
-wifi_utils_result_e wifi_utils_connect_ap(wifi_utils_ap_config_s *ap_connect_config, void *arg)
-{
-	WM_ENTER;
-
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_CONNECT_AP,
-						 sizeof(wifi_utils_ap_config_s), (void *)ap_connect_config, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_CONNECTAP},
+					sizeof(trwifi_ap_config_s), (void *)ap_connect_config, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_disconnect_ap(void *arg)
+trwifi_result_e wifi_utils_disconnect_ap(void *arg)
 {
-	WM_ENTER;
-
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_DISCONNECT_AP, 0, NULL, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_DISCONNECTAP}, 0, NULL, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_get_info(wifi_utils_info_s *wifi_info)
+trwifi_result_e wifi_utils_start_softap(trwifi_softap_config_s *softap_config)
 {
-	WM_ENTER;
-
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_GET_INFO,
-						 sizeof(wifi_utils_info_s), (void *)wifi_info, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_STARTSOFTAP},
+					sizeof(trwifi_softap_config_s),
+					(void *)softap_config, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_start_softap(wifi_utils_softap_config_s *softap_config)
+trwifi_result_e wifi_utils_start_sta(void)
 {
-	WM_ENTER;
-
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_START_SOFTAP,
-						 sizeof(wifi_utils_softap_config_s), (void *)softap_config, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_STARTSTA}, 0, NULL, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_start_sta(void)
+trwifi_result_e wifi_utils_stop_softap(void)
 {
-	WM_ENTER;
-
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_START_STA, 0, NULL, 0};
-
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_STOPSOFTAP}, 0, NULL, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
-
-	return WIFI_UTILS_SUCCESS;
+	return res;
 }
 
-wifi_utils_result_e wifi_utils_stop_softap(void)
+trwifi_result_e wifi_utils_set_autoconnect(uint8_t check)
 {
-	WM_ENTER;
-
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_STOP_SOFTAP, 0, NULL, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
-	}
-	return WIFI_UTILS_SUCCESS;
-}
-
-wifi_utils_result_e wifi_utils_set_autoconnect(uint8_t check)
-{
-	WM_ENTER;
-
+	trwifi_result_e res = TRWIFI_SUCCESS;
 	uint8_t *chk = &check;
-	lwnl_msg msg = {WU_INTF_NAME, LWNL_SET_AUTOCONNECT,
-						 sizeof(uint8_t), (void *)chk, 0};
-	wu_lwnl_status_e res = _send_msg(&msg);
-	if (res < 0) {
-		return WIFI_UTILS_FAIL;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_SETAUTOCONNECT},
+					sizeof(uint8_t), (void *)chk, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
 	}
+	return res;
+}
 
-	return WIFI_UTILS_SUCCESS;
+trwifi_result_e wifi_utils_ioctl(trwifi_msg_s *dmsg)
+{
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_IOCTL},
+					sizeof(trwifi_msg_s), (void *)dmsg, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
+	}
+	return res;
+}
+
+trwifi_result_e wifi_utils_get_info(trwifi_info *wifi_info)
+{
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_GETINFO},
+					sizeof(trwifi_info), (void *)wifi_info, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
+	}
+	return res;
 }

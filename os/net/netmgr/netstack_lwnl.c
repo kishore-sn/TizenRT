@@ -23,6 +23,9 @@
 #include <net/if.h>
 #include <tinyara/lwnl/lwnl.h>
 #include "netstack.h"
+#include <tinyara/net/netlog.h>
+
+#define TAG "[NETMGR]"
 
 static int _create_netlink(int type, int protocol)
 {
@@ -32,7 +35,7 @@ static int _create_netlink(int type, int protocol)
 
 	int fd = open(LWNL_PATH, O_RDWR);
 	if (fd < 0) {
-		ndbg("open netlink dev fail\n");
+		NET_LOGE(TAG, "open netlink dev fail\n");
 		return -1;
 	}
 	return fd;
@@ -46,10 +49,8 @@ static int netlink_socket(int domain, int type, int protocol)
 // allocate network event listen
 static int netlink_bind(int s, const struct sockaddr *name, socklen_t namelen)
 {
-	(void)name;
 	(void)namelen;
-	int res = ioctl(s, SIOCSLWNLEVT, 0);
-	return res;
+	return ioctl(s, SIOCSLWNLEVT, (unsigned long)name);
 }
 
 struct netstack_ops g_netlink_stack_ops = {

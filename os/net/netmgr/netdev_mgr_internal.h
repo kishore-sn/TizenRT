@@ -15,15 +15,20 @@
  * language governing permissions and limitations under the License.
  *
  ****************************************************************************/
-
-#ifndef __TIZENRT_NETDEV_MGR_INTERNAL_H__
-#define __TIZENRT_NETDEV_MGR_INTERNAL_H__
+#pragma once
 
 #define NETDEV_IP 1
 #define NETDEV_GW 2
 #define NETDEV_NETMASK 3
 
 #define ND_NETOPS(dev, method) (((struct netdev_ops *)((dev)->ops))->method)
+#define ND_NETOPS_RET(res, dev, method, param)							\
+	do {																\
+		if (((struct netdev_ops *)((dev)->ops))->method) {						\
+			res = (((struct netdev_ops *)((dev)->ops))->method)param;	\
+		}																\
+	} while (0)
+#define GET_NETIF_FROM_NETDEV(dev) (struct netif *)(((struct netdev_ops *)(dev)->ops)->nic)
 
 struct nic_config {
 	int flag;
@@ -50,6 +55,7 @@ struct netdev_ops {
 	int (*get_ip4addr)(struct netdev *dev, struct sockaddr *addr, int type);
 	int (*set_ip4addr)(struct netdev *dev, struct sockaddr *addr, int type);
 	int (*set_ip6addr)(struct netdev *dev, struct sockaddr_storage *addr, int type);
+	int (*set_ip6addr_type)(struct netdev *dev, uint8_t type);
 	int (*get_ifaddrs)(struct netdev *dev, struct ifaddrs **addrs);
 	int (*delete_ipaddr)(struct netdev *dev);
 
@@ -61,9 +67,11 @@ struct netdev_ops {
 	/*  Interface control */
 	int (*ifup)(struct netdev *dev);
 	int (*ifdown)(struct netdev *dev);
+	/*  control network stack traffic */
+	int (*softup)(struct netdev *dev);
+	int (*softdown)(struct netdev *dev);
 
-	/* multicast
-	 */
+	/* multicast */
 	int (*joingroup)(struct netdev *dev, struct in_addr *addr);
 	int (*leavegroup)(struct netdev *dev, struct in_addr *addr);
 
@@ -75,6 +83,9 @@ struct netdev_ops {
 	 */
 #ifdef CONFIG_NET_NETMON
 	int (*get_stats)(struct netdev *dev, struct netmon_netdev_stats *stats);
+#endif
+#ifdef CONFIG_NETDEV_PHY_IOCTL
+	int (*d_ioctl)(struct netdev *dev, int cmd, void *data);
 #endif
 	/*  NIC stack specific */
 	void *nic;
@@ -90,5 +101,3 @@ int nm_foreach(tr_netdev_callback_t callback, void *arg);
 int nm_count(void);
 int nm_ifup(struct netdev *dev);
 int nm_ifdown(struct netdev *dev);
-
-#endif // __TIZENRT_NETDEV_MGR_INTERNAL_H__

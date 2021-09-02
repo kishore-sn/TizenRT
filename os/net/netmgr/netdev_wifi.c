@@ -27,75 +27,298 @@
 #include <tinyara/net/if/ethernet.h>
 #include <tinyara/netmgr/netdev_mgr.h>
 #include "netdev_mgr_internal.h"
+#include <tinyara/net/netlog.h>
+
+#define TRWIFI_CALL(res, dev, method, param)	\
+	do {										\
+		if (dev->t_ops.wl->method) {			\
+			res = (dev->t_ops.wl->method)param;	\
+		}										\
+	} while (0)
+
+#define LOCK_EVTQUEUE(queue)								\
+	do {													\
+		if (sem_wait(&queue.lock) != 0) {					\
+			int derr_no = get_errno();						\
+			if (derr_no == EINTR) {							\
+				continue;									\
+			} else {										\
+				NET_LOGE(TAG, "lock fail %d\n", derr_no);	\
+				assert(0);									\
+			}												\
+		}													\
+	} while (0)
+
+#define UNLOCK_EVTQUEUE(queue)							\
+	do {												\
+		if (sem_post(&queue.lock) != 0) {				\
+			NET_LOGE(TAG, "unlock fail %d\n", errno);	\
+			assert(0);									\
+		}												\
+	} while (0)
+
+#define WAIT_EVTQUEUE(queue)										\
+	do {															\
+		if (sem_wait(&queue.signal) != 0) {							\
+			int derr_no = get_errno();								\
+			if (derr_no == EINTR) {									\
+				continue;											\
+			} else {												\
+				NET_LOGE(TAG, "wait signal error %d\n", derr_no);	\
+				assert(0);											\
+			}														\
+		}															\
+	} while (0)
+
+#define SIGNAL_EVTQUEUE(queue)								\
+	do {													\
+		if (sem_post(&queue.signal) != 0) {					\
+			NET_LOGE(TAG, "send signal fail %d\n", errno);	\
+			assert(0);										\
+		}													\
+	} while (0)
+
+#define CONTAINER_OF(ptr, type, member)							\
+	((type *)((char *)(ptr) - (size_t)(&((type *)0)->member)))
+
+#define TRWIFI_GET_EVT(ptr)						\
+	CONTAINER_OF(ptr, trwifi_evt, entry)
+
+#define NETMGR_EVTHANDLER_PRIO 100
+#define NETMGR_EVTHANDLER_STACKSIZE 2048
+#define TAG "[NETMGR]"
+
+typedef struct {
+	sem_t lock;
+	sem_t signal;
+	sq_queue_t queue;
+} trwifi_evt_queue;
+
+typedef struct {
+	uint32_t evt;
+	void *dev;
+	void *buf;
+	int32_t buf_len;
+	sq_entry_t entry;
+} trwifi_evt;
+
+static trwifi_evt_queue g_queue;
+
+// this function have to succeed. otherwise it'd be better to reset.
+int _trwifi_handle_event(struct netdev *dev, lwnl_cb_wifi evt, void *buffer, uint32_t buf_len)
+{
+	if (!dev) {
+		NET_LOGE(TAG, "invalid parameter dev\n");
+		return -1;
+	}
+	if (evt == LWNL_EVT_STA_CONNECTED) {
+		return ND_NETOPS(dev, softup(dev));
+	} else if (evt == LWNL_EVT_STA_DISCONNECTED) {
+		return ND_NETOPS(dev, softdown(dev));
+	}
+	return 0;
+}
+
+// this function have to succeed. other it'd be better to reset.
+int _trwifi_handle_command(struct netdev *dev, lwnl_req cmd)
+{
+	if (!dev) {
+		NET_LOGE(TAG, "invalid parameter dev\n");
+		return -1;
+	}
+	switch (cmd.type) {
+	case LWNL_REQ_WIFI_STARTSOFTAP: {
+		return ND_NETOPS(dev, softup(dev));
+	}
+	case LWNL_REQ_WIFI_STOPSOFTAP: {
+		return ND_NETOPS(dev, softdown(dev));
+	}
+	case LWNL_REQ_WIFI_INIT: {
+		return ND_NETOPS(dev, ifup(dev));
+	}
+	case LWNL_REQ_WIFI_DEINIT: {
+		return ND_NETOPS(dev, ifdown(dev));
+	}
+	default:
+		break;
+	}
+	return 0;
+}
 
 int netdev_handle_wifi(struct netdev *dev, lwnl_req cmd, void *data, uint32_t data_len)
 {
-	lwnl_result_e res = LWNL_FAIL;
-	lldbg("T%d cmd(%d) (%p) (%d)\n", getpid(), cmd, data, data_len);
-	switch (cmd) {
-	case LWNL_INIT:
+	trwifi_result_e res = TRWIFI_FAIL;
+
+	NET_LOGV(TAG, "T%d cmd(%d) (%p) (%d)\n", getpid(), cmd.type, data, data_len);
+	switch (cmd.type) {
+	case LWNL_REQ_WIFI_INIT:
 	{
-		int ret = nm_ifup(dev);
-		if (ret != 0) {
-			ret = LWNL_FAIL;
-		}
+		TRWIFI_CALL(res, dev, init, (dev));
 	}
 	break;
-	case LWNL_DEINIT:
+	case LWNL_REQ_WIFI_DEINIT:
 	{
-		int ret = nm_ifdown(dev);
-		if (ret != 0) {
-			ret = LWNL_FAIL;
-		}
+		TRWIFI_CALL(res, dev, deinit, (dev));
 	}
 	break;
-	case LWNL_GET_INFO:
+	case LWNL_REQ_WIFI_GETINFO:
 	{
-		trwifi_info *info = (trwifi_info *)data;
-		res = dev->t_ops.wl->get_info(dev, info);
+		TRWIFI_CALL(res, dev, get_info, (dev, (trwifi_info *)data));
 	}
 	break;
-	case LWNL_SET_AUTOCONNECT:
+	case LWNL_REQ_WIFI_SETAUTOCONNECT:
 	{
-		uint8_t *check = (uint8_t *)data;
-		res = dev->t_ops.wl->set_autoconnect(dev, *check);
+		TRWIFI_CALL(res, dev, set_autoconnect, (dev, *((uint8_t *)data)));
 	}
 	break;
-	case LWNL_START_STA:
+	case LWNL_REQ_WIFI_STARTSTA:
 	{
-		res = dev->t_ops.wl->start_sta(dev);
+		TRWIFI_CALL(res, dev, start_sta, (dev));
 	}
 	break;
-	case LWNL_CONNECT_AP:
+	case LWNL_REQ_WIFI_CONNECTAP:
 	{
-		trwifi_ap_config_s *config = (trwifi_ap_config_s *)data;
-		res = dev->t_ops.wl->connect_ap(dev, config, NULL);
+		TRWIFI_CALL(res, dev, connect_ap, (dev, (trwifi_ap_config_s*)data, NULL));
 	}
 	break;
-	case LWNL_DISCONNECT_AP:
+	case LWNL_REQ_WIFI_DISCONNECTAP:
 	{
-		res = dev->t_ops.wl->disconnect_ap(dev, NULL);
+		TRWIFI_CALL(res, dev, disconnect_ap, (dev, NULL));
 	}
 	break;
-	case LWNL_START_SOFTAP:
+	case LWNL_REQ_WIFI_STARTSOFTAP:
 	{
-		trwifi_softap_config_s *config = (trwifi_softap_config_s *)data;
-		res = dev->t_ops.wl->start_softap(dev, config);
+		TRWIFI_CALL(res, dev, start_softap, (dev, (trwifi_softap_config_s *)data));
 	}
 	break;
-	case LWNL_STOP_SOFTAP:
+	case LWNL_REQ_WIFI_STOPSOFTAP:
 	{
-		res = dev->t_ops.wl->stop_softap(dev);
+		TRWIFI_CALL(res, dev, stop_softap, (dev));
 	}
 	break;
-	case LWNL_SCAN_AP:
+	case LWNL_REQ_WIFI_SCANAP:
 	{
-		res = dev->t_ops.wl->scan_ap(dev, NULL);
+		TRWIFI_CALL(res, dev, scan_ap, (dev, (trwifi_scan_config_s*)data));
+	}
+	break;
+	case LWNL_REQ_WIFI_IOCTL:
+	{
+		TRWIFI_CALL(res, dev, drv_ioctl, (dev, (trwifi_msg_s *)data));
 	}
 	break;
 	default:
-		res = LWNL_FAIL;
 		break;
 	}
+	if (res == TRWIFI_SUCCESS) {
+		if (_trwifi_handle_command(dev, cmd) < 0) {
+			// if network stack is not enabled. it needs to be restart
+			NET_LOGE(TAG, "critical error network stack is not enabled\n");
+			assert(0);
+		}
+	}
 	return res;
+}
+
+int trwifi_serialize_scaninfo(uint8_t **buffer, trwifi_scan_list_s *scan_list)
+{
+	trwifi_scan_list_s *item = scan_list;
+	int32_t cnt = 0;
+	int32_t total = 0;
+
+	while (item) {
+		item = item->next;
+		cnt++;
+	}
+	total = cnt * sizeof(trwifi_ap_scan_info_s);
+	uint32_t item_size = sizeof(trwifi_ap_scan_info_s);
+	NET_LOGV(TAG, "total size(%d) (%d) \n", sizeof(trwifi_ap_scan_info_s), total);
+
+	*buffer = (uint8_t *)kmm_malloc(total);
+	if (!(*buffer)) {
+		NET_LOGE(TAG, "malloc fail %d\n", total);
+		return -1;
+	}
+
+	item = scan_list;
+	cnt = 0;
+	while (item) {
+		memcpy(*buffer + (item_size * cnt), &item->ap_info, item_size);
+		item = item->next;
+		cnt++;
+	}
+	return total;
+}
+
+int trwifi_post_event(struct netdev *dev, lwnl_cb_wifi evt, void *buffer, uint32_t buf_len)
+{
+	trwifi_evt *msg = (trwifi_evt *)kmm_zalloc(sizeof(trwifi_evt));
+	if (!msg) {
+		return -1;
+	}
+	msg->evt = evt;
+	msg->dev = dev;
+	if (buffer) {
+		msg->buf = (void *)kmm_malloc(buf_len);
+		if (!msg->buf) {
+			return -1;
+		}
+		memcpy(msg->buf, buffer, buf_len);
+		msg->buf_len = buf_len;
+	}
+	LOCK_EVTQUEUE(g_queue);
+	sq_addlast(&msg->entry, &g_queue.queue);
+	UNLOCK_EVTQUEUE(g_queue);
+	SIGNAL_EVTQUEUE(g_queue);
+	return 0;
+}
+
+void *_trwifi_event_handler(void *arg)
+{
+	while (1) {
+		WAIT_EVTQUEUE(g_queue);
+		LOCK_EVTQUEUE(g_queue);
+		trwifi_evt *evt = TRWIFI_GET_EVT(sq_remfirst(&g_queue.queue));
+		UNLOCK_EVTQUEUE(g_queue);
+		int res = _trwifi_handle_event(evt->dev, evt->evt, evt->buf, evt->buf_len);
+		if (res < 0) {
+			// if network stack is not enabled. it needs to be restart
+			NET_LOGE(TAG, "critical error network stack is not enabled\n");
+			assert(0);
+		}
+
+		res = lwnl_postmsg(LWNL_DEV_WIFI, evt->evt, evt->buf, evt->buf_len);
+		if (res < 0) {
+			NET_LOGE(TAG, "critical error network stack is not enabled\n");
+			assert(0);
+		}
+		if (evt->buf) {
+			kmm_free(evt->buf);
+			evt->buf_len = 0;
+		}
+		kmm_free(evt);
+	}
+
+	NET_LOGE(TAG, "critical error\n", errno);
+	return NULL;
+}
+
+int trwifi_run_handler(void)
+{
+	if (sem_init(&g_queue.lock, 0, 1) != 0) {
+		NET_LOGE(TAG, "init lock fail %d\n", errno);
+		return -1;
+	}
+	if (sem_init(&g_queue.signal, 0, 0) != 0) {
+		NET_LOGE(TAG, "init signal fail %d\n", errno);
+		return -1;
+	}
+
+	sys_thread_t tid;
+	tid = kernel_thread("netmgr_event_handler", NETMGR_EVTHANDLER_PRIO,
+						NETMGR_EVTHANDLER_STACKSIZE, _trwifi_event_handler, NULL);
+	if (tid == ERROR) {
+		NET_LOGE(TAG, "critical error %d\n", errno);
+		return -2;
+	}
+	return 0;
 }

@@ -110,7 +110,7 @@ SECTIONS
 	.ram_image2.text :
 	{
 		__ram_text_start__ = .;
-		_stext = ABSOLUTE(.);
+		_stext_ram = ABSOLUTE(.);
 		*(.image2.ram.text*)
 		*(.image2.net.ram.text*)
 		/*os*/
@@ -264,7 +264,7 @@ SECTIONS
 		*lib_vikmemcpy.o (.text*)
 		*dq_rem.o (.text*)
 		*dq_addlast.o (.text*)
-		_etext = ABSOLUTE(.);
+		_etext_ram = ABSOLUTE(.);
 		__ram_text_end__ = .;
 	} > BD_RAM_NS
 
@@ -274,7 +274,7 @@ SECTIONS
 	{
 		_sdata = ABSOLUTE(.);
 		__data_start__ = .;
-		*(.data*)
+		*(EXCLUDE_FILE (*libapps.a:* *libframework.a:* *libiotivity.a:* *libexternal.a:*) .data*)
 		__data_end__ = .;
 		_edata = ABSOLUTE(.);
 		__ram_image2_text_end__ = .;
@@ -285,7 +285,7 @@ SECTIONS
 	{
 		_sbss = ABSOLUTE(.);
 		__bss_start__ = .;
-		*(.bss*)
+		*(EXCLUDE_FILE (*libapps.a:* *libframework.a:* *libiotivity.a:* *libexternal.a:*) .bss*)
 		*(COMMON)
 		__bss_end__ = .;
 
@@ -312,6 +312,7 @@ SECTIONS
 	.xip_image2.text :
 	{
 		__flash_text_start__ = .;
+		_stext_flash = ABSOLUTE(.);
 
 		*(.img2_custom_signature*)
 
@@ -341,6 +342,7 @@ SECTIONS
 		KEEP(*(.cmd.table.data*))
 		__cmd_table_end__ = .;
 
+		_etext_flash = ABSOLUTE(.);
 		__flash_text_end__ = .;
 
 		. = ALIGN (16);
@@ -382,6 +384,10 @@ SECTIONS
 		*(.psram.data*)
 		. = ALIGN (32);
 		*(.psram.rodata*)
+		*libapps.a:*(.data*)
+		*libiotivity.a:*(.data*)
+		*libexternal.a:*(.data*)
+		*libframework.a:*(.data*)
 	} > PSRAM_NS
 
 	.psram_image2.bss :
@@ -389,6 +395,10 @@ SECTIONS
 		. = ALIGN (32);
 		__psram_bss_start__ = .;
 		*(.psram.bss*)
+		*libapps.a:*(.bss*)
+		*libiotivity.a:*(.bss*)
+		*libexternal.a:*(.bss*)
+		*libframework.a:*(.bss*)
 		__psram_bss_end__ = .;
 	} > PSRAM_NS
 

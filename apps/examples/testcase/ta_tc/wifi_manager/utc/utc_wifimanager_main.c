@@ -217,11 +217,7 @@ static void utc_wifimanager_get_mode_p(void)
 
 	TC_ASSERT_EQ("wifi_manager_get_info", ret, WIFI_MANAGER_SUCCESS);
 	TC_ASSERT_EQ("wifi_manager_get_info", info.mode, SOFTAP_MODE);
-	printf("\nMAC Address: ");
-	for (i = 0; i < 5; i++) {
-		printf("%x:", info.mac_address[i]);
-	}
-	printf("%x\n", info.mac_address[5]);
+
 	ret_cmp = strncmp(info.ssid, ap_config.ssid, strlen(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC_SOFTAP_SSID));
 	TC_ASSERT_EQ("wifi_manager_get_mode", ret_cmp, 0);
 
@@ -331,7 +327,7 @@ static void utc_wifimanager_scan_ap_n(void)
 	ret = wifi_manager_init(&wifi_null_callbacks);
 	TC_ASSERT_EQ("wifi_manager_init", ret, WIFI_MANAGER_SUCCESS);
 
-	ret = wifi_manager_scan_ap();
+	ret = wifi_manager_scan_ap(NULL);
 
 	TC_ASSERT_EQ("wifi_manager_scan_ap", ret, WIFI_MANAGER_FAIL);
 	TC_SUCCESS_RESULT();
@@ -370,7 +366,7 @@ static void utc_wifimanager_scan_ap_p(void)
 	ret = wifi_manager_init(&wifi_callbacks);
 	TC_ASSERT_EQ("wifi_manager_init", ret, WIFI_MANAGER_SUCCESS);
 
-	ret = wifi_manager_scan_ap();
+	ret = wifi_manager_scan_ap(NULL);
 	TC_ASSERT_EQ("wifi_manager_scan_ap", ret, WIFI_MANAGER_SUCCESS);
 
 	TC_SUCCESS_RESULT();
@@ -646,7 +642,6 @@ int main(int argc, FAR char *argv[])
 int utc_wifimanager_main(int argc, char *argv[])
 #endif
 {
-
 	int ssid_len = strlen(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC_SSID);
 	int passphrase_len = strlen(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC_PASSPHRASE);
 	int softap_ssid_len =	strlen(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC_SOFTAP_SSID);

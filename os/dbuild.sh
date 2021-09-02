@@ -105,6 +105,7 @@ function SELECT_OPTION()
 			if [ "${STATUS}" == "BUILT" ]; then
 				echo "  \"d. Download\""
 			fi
+			echo "  \"t. Build Test\""
 			echo "  \"x. Exit\""
 			echo ======================================================
 			read SELECTED_START
@@ -132,13 +133,15 @@ function SELECT_OPTION()
 		6|smartfs)
 			BUILD smartfs
 			;;
-
 		d|download)
 			if [ "${STATUS}" == "BUILT" ]; then
 				STATUS=PREPARE_DL
 			else
 				echo "No output file"
 			fi
+			;;
+		t|test)
+			BUILD_TEST
 			;;
 		x|exit)
 			exit 1
@@ -152,6 +155,14 @@ function SELECT_OPTION()
 	else
 		SELECT_BOARD
 	fi
+}
+
+function BUILD_TEST()
+{
+	# excute a shell script for build test
+	pushd ${OSDIR} > /dev/null
+	docker run --rm ${DOCKER_OPT} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${DOCKER_VERSION} bash -c "./tools/build_test.sh"
+	popd > /dev/null
 }
 
 function SELECT_BOARD()
@@ -194,9 +205,16 @@ function SELECT_BOARD()
 			BOARDNAME_STR[${IDX}]=${BOARDNAME_MEMBER}
 			((IDX=IDX+1))
 		done
+		echo "  \"t. BUILD TEST\""
 		echo "  \"x. EXIT\""
 		echo ======================================================
 		read SELECTED_BOARD
+	fi
+
+	# treate "test"
+	if [ "${SELECTED_BOARD}" == "t" -o "${SELECTED_BOARD}" == "test" -o "${SELECTED_BOARD}" == "TEST" ]; then
+		BUILD_TEST
+		exit 1
 	fi
 
 	# treate "exit"
@@ -412,6 +430,9 @@ function BUILD()
 	else
 		DOCKER_OPT="-i"
 	fi
+
+	HOSTNAME="-h=`git config user.name | tr -d ' '`" # set github username instead of hostname, "-h=`hostname`"
+	LOCALTIME="-v /etc/localtime:/etc/localtime:ro"
 	
 	DOCKER_IMAGES=`docker images | grep tizenrt/tizenrt | awk '{print $2}'`
 	for im in $DOCKER_IMAGES
@@ -429,8 +450,7 @@ function BUILD()
 		fi
 	fi
 	echo "Docker Image Version : ${DOCKER_VERSION}"
-	docker run --rm ${DOCKER_OPT} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${DOCKER_VERSION} ${BUILD_CMD} $1 2>&1 | tee build.log
-
+	docker run --rm ${DOCKER_OPT} ${HOSTNAME} ${LOCALTIME} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${DOCKER_VERSION} ${BUILD_CMD} $1 2>&1 | tee build.log
 	UPDATE_STATUS
 }
 

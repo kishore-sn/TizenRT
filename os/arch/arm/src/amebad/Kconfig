@@ -73,6 +73,10 @@ config FTL_ENABLED
 	bool "Enable FTL"
 	default n
 
+config AMEBAD_BLE_DEBUG
+	bool "Enable BLE Debug"
+	default n
+
 config AMEBAD_BLE_PERIPHERAL
 	bool "Enable Amebad BLE Peripheral"
 	default n
@@ -80,6 +84,13 @@ config AMEBAD_BLE_PERIPHERAL
 config AMEBAD_BLE_CENTRAL
 	bool "Enable Amebad BLE Central"
 	default n
+
+if AMEBAD_BLE_CENTRAL && AMEBAD_BLE_PERIPHERAL
+	config AMEBAD_BLE_SCATTERNET
+		bool "Enable Amebad BLE Scatternet"
+		default n
+endif
+
 endif
 
 endmenu

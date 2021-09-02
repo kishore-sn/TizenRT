@@ -15,15 +15,12 @@
  * language governing permissions and limitations under the License.
  *
  ****************************************************************************/
+#pragma once
 
-#ifndef __WIFIMANAGER_TEST_H__
-#define __WIFIMANAGER_TEST_H__
-
-struct options;
+struct wt_options;
 typedef void (*test_func)(void *arg);
-typedef int (*exec_func)(struct options *opt, int argc, char *argv[]);
 
-struct options {
+struct wt_options {
 	test_func func;
 	uint16_t channel;
 	char *ssid;
@@ -37,6 +34,5 @@ struct options {
 	int softap_channel;
 	int scan_specific;
 	uint32_t stress_tc_idx;
+	uint8_t power_mode;
 };
-
-#endif // #define __WIFIMANAGER_TEST_H__
