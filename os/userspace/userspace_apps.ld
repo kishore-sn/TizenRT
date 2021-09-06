@@ -50,9 +50,15 @@
  *
  ****************************************************************************/
 
+MEMORY
+{
+	flash (rx)  : ORIGIN = 0x00000000, LENGTH = 0x04000000
+	sram  (rwx) : ORIGIN = 0x81000000, LENGTH = 0x01000000
+}
+
 SECTIONS
 {
-  .text 0x00000000 :
+  .text : ALIGN(32)
     {
       _stext_flash = . ;
       /* Place holder to keep the heap object at the top
@@ -78,16 +84,9 @@ SECTIONS
       *(.init)             /* Old ABI */
       *(.fini)             /* Old ABI */
       _etext_flash = . ;
-    }
+    } > sram AT > flash
 
-  .init_section :
-    {
-      _sinit = . ;
-      *(.init_array .init_array.*)
-      _einit = . ;
-    }
-
-  .rodata :
+  .rodata : ALIGN(32)
     {
       _srodata = . ;
       *(.rodata)
@@ -96,9 +95,9 @@ SECTIONS
       *(.gnu.linkonce.r*)
       _erodata = . ;
       _eronly = .;
-    }
+    } > sram AT > flash
 
-  .data 0x00000000 :
+  .data : ALIGN(32)
     {
       _sdata = . ;
       LONG(0);
@@ -109,7 +108,7 @@ SECTIONS
       *(.data.*)
       *(.gnu.linkonce.d*)
       _edata = . ;
-    }
+    } > sram AT > flash
 
   /* C++ support. For each global and static local C++ object,
    * GCC creates a small subroutine to construct the object. Pointers
@@ -119,23 +118,23 @@ SECTIONS
    * stored in .dtors.
    */
 
-  .ctors :
+  .ctors : ALIGN(32)
     {
       _sctors = . ;
       *(.ctors)       /* Old ABI:  Unallocated */
       *(.init_array)  /* New ABI:  Allocated */
       _ectors = . ;
-    }
+    } > sram AT > flash
 
-  .dtors :
+  .dtors : ALIGN(32)
     {
       _sdtors = . ;
       *(.dtors)       /* Old ABI:  Unallocated */
       *(.fini_array)  /* New ABI:  Allocated */
       _edtors = . ;
-    }
+    } > sram AT > flash
 
-  .bss :
+  .bss : ALIGN(32)
     {
       _sbss = . ;
       *(.bss)
@@ -145,7 +144,7 @@ SECTIONS
       *(.gnu.linkonce.b*)
       *(COMMON)
       _ebss = . ;
-    }
+    } > sram
 
     /* Stabs debugging sections.    */
 
