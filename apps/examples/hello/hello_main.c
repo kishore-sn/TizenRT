@@ -53,9 +53,52 @@
 /****************************************************************************
  * Included Files
  ****************************************************************************/
-
 #include <tinyara/config.h>
 #include <stdio.h>
+#include <fcntl.h>
+#include <tinyara/fs/ioctl.h>
+#include <sys/types.h>
+#include <tinyara/pm/pm.h>
+
+void thread1_task(void)
+{
+	printf("THREAD_1: Inside thread 1 !!!!\n");
+	int fd = open("/dev/pm", O_RDONLY);
+	if (fd < 0) {
+		printf("Cannot open /dev/pm file with fd = %d\n", fd);
+	}
+
+	while(1) {
+
+		printf("THREAD_1: Do Some task 1 1 1 1 1 1 1 1 1 1 1 1 1\n");
+		if (ioctl(fd, PMIOC_SLEEP, 10000) != 0) {
+			printf("THREAD_1: unable to start timer with id = %d\n", getpid());
+		}
+
+	}
+
+	close(fd);
+}
+
+void thread2_task(void)
+{
+	printf("THREAD_2: Inside thread 2 !!!!\n");
+	int fd = open("/dev/pm", O_RDONLY);
+	if (fd < 0) {
+		printf("Cannot open /dev/pm file with fd = %d\n", fd);
+	}
+
+	while(1) {
+
+		printf("THREAD_2: Do Some task 2 2 2 2 2 2 2 2 2 2 2 2 2 2\n");
+		if (ioctl(fd, PMIOC_SLEEP, 20000) != 0) {
+			printf("THREAD_2: unable to start timer with id = %d\n", getpid());
+		}
+
+	}
+
+	close(fd);
+}
 
 /****************************************************************************
  * hello_main
@@ -67,6 +110,24 @@ int main(int argc, FAR char *argv[])
 int hello_main(int argc, char *argv[])
 #endif
 {
-	printf("Hello, World!!\n");
+	printf("Hello, Ritesh!!!\n");
+	pthread_t thread1;
+	pthread_t thread2;
+
+	int fd = open("/dev/pm", O_RDONLY);
+	if (fd < 0) {
+		printf("Cannot open /dev/pm file with fd = %d\n", fd);
+	}
+	ioctl(fd, PMIOC_RESUME, PM_NORMAL);
+	close(fd);
+
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	CPU_ZERO(&attr.affinity);
+        CPU_SET(1, &attr.affinity);
+
+	pthread_create(&thread1, &attr, thread1_task, NULL);
+//	pthread_create(&thread2, NULL, thread2_task, NULL);
+
 	return 0;
 }

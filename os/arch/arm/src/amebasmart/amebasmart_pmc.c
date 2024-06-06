@@ -64,6 +64,7 @@
 #include "sys_io.h"
 #include "gic.h"
 #include "psci.h"
+#include "smp.h"
 
 #define GIC_MAX_NUM_INTR NR_IRQS
 #define ROUND_UP(divider, divisor) (divider%divisor) ? ((divider/divisor)+1) : (divider/divisor)
@@ -221,6 +222,7 @@ void SOCPS_SleepPG(void)
 		return;
 	}
 
+	lldbg("Enter\n");
 	//save gic registers
 	SOCPS_Save_GIC();
 
@@ -235,10 +237,12 @@ void SOCPS_SleepPG(void)
 	/* exec sleep hook functions */
 	pmu_exec_wakeup_hook_funs(PMU_MAX);
 
-#if ( configNUM_CORES > 1 )
+#if ( CONFIG_SMP_NCPUS > 1 )
+#ifdef CONFIG_CPU_HOTPLUG
 	/* Now init core1 */
+	up_set_secondary_cpu_state(1, CPU_WAKE_FROM_SLEEP);
+#endif
 	smp_init();
-	pmu_set_secondary_cpu_state(1, CPU1_WAKE_FROM_PG);
 #endif
 	//pmu_acquire_wakelock(PMU_OS);
 }
@@ -255,6 +259,7 @@ void SOCPS_SleepCG(void)
 		return;
 	}
 
+	lldbg("Enter\n");
 	sleep_param.sleep_type = SLEEP_CG;
 	HAL_WRITE8(SYSTEM_CTRL_BASE_LP, REG_LSYS_AP_STATUS_SW,
 			   HAL_READ8(SYSTEM_CTRL_BASE_LP, REG_LSYS_AP_STATUS_SW) & (~ LSYS_BIT_AP_RUNNING));
