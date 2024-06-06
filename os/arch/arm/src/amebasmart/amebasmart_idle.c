@@ -84,18 +84,26 @@ static void up_idlepm(void)
 		   			   Then, we can do vPortSecondaryOff() for SMP case (ie. shutdown secondary core)
 		*/
 		switch (newstate) {
-			case PM_NORMAL:
-				/* In PM_NORMAL, we have nothing to do, set core to WFE */
-				__asm(" WFE");
-				break;
-			case PM_IDLE:
-				/* In PM_IDLE, we have nothing to do, set core to WFE */
-				__asm(" WFE");
-				break;
-			case PM_STANDBY:
-				/* In PM_STANDBY, we have nothing to do, set core to WFE */
-				__asm(" WFE");
-				break;
+                        case PM_NORMAL:
+#ifdef CONFIG_PM_DVFS
+                                lldbg("PM_NORMAL dvfs 0\n");
+                                up_set_dvfs(0);
+#endif
+                                break;
+                        case PM_IDLE:
+#ifdef CONFIG_PM_DVFS
+                                lldbg("PM_IDLE dvfs 1\n");
+                                up_set_dvfs(1);
+#endif
+                                break;
+                        case PM_STANDBY:
+                                /* Lower down cpu frequency, as we might go to sleep soon */
+#ifdef CONFIG_PM_DVFS
+                                lldbg("PM_STANDBY dvfs 3\n");
+                                up_set_dvfs(3);
+#endif
+                                break;
+
 			case PM_SLEEP:
 				/* TODO: When enabling SMP, PM state coherency should be verified for 
 				   primary and secondary cores. Each of the cores has it's own idle task,
