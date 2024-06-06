@@ -47,55 +47,7 @@ static struct s_buffer buffers;
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
-
-/****************************************************************************
- * Name: compress_decompress_block
- *
- * Description:
- *   Decompress block in 'read_buffer' of readsize into 'out_buffer' of writesize
- *
- * Returned Value:
- *   Non-negative value on Success.
- *   Negative value on Failure.
- ****************************************************************************/
- #if CONFIG_COMPRESSION_TYPE == LZMA
-static int compress_decompress_block(unsigned char *out_buffer, unsigned int *writesize, unsigned char *read_buffer, unsigned int *size, int index)
-#elif CONFIG_COMPRESSION_TYPE == MINIZ
-static int compress_decompress_block(unsigned char *out_buffer, long unsigned int *writesize, unsigned char *read_buffer, long unsigned int *size, int index)
-#endif
-{
-	int ret = ERROR;
-
-#if CONFIG_COMPRESSION_TYPE == LZMA
-	if (compression_header->compression_format == COMPRESSION_TYPE_LZMA) {
-		/* LZMA specific logic for decompression */
-		*writesize = compression_header->blocksize;
-		*size -= (LZMA_PROPS_SIZE);
-
-		ret = LzmaUncompress(&out_buffer[0], writesize, &read_buffer[LZMA_PROPS_SIZE], size, &read_buffer[0], LZMA_PROPS_SIZE);
-		if (ret == SZ_ERROR_FAIL) {
-			bcmpdbg("Failure to decompress with LZMAUncompress API\n");
-			ret = -ret;
-		}
-	}
-#elif CONFIG_COMPRESSION_TYPE == MINIZ
-		if (compression_header->compression_format == COMPRESSION_TYPE_MINIZ) {
-			/* Miniz specific logic for decompression */
-			*writesize = compression_header->blocksize;
-	
-			ret = mz_uncompress(out_buffer, writesize, read_buffer, *size);
-			if (ret != Z_OK) {
-				bcmpdbg("Failure to decompress with Miniz's uncompress API; ret = %d\n", ret);
-				if (ret > 0)
-					ret = -ret;
-			}
-		}
-#endif
-
-
-	return ret;
-}
-
+ 
 /****************************************************************************
  * Name: compress_blocks_to_read
  *
@@ -237,7 +189,7 @@ static off_t compress_lseek_block(int filfd, uint16_t binary_header_size, int bl
 static off_t compress_read_block(int filfd, uint16_t binary_header_size, FAR uint8_t *buf, int block_number)
 {
 	off_t rpos;
-	size_t readsize;
+	off_t readsize;
 	ssize_t nbytes;
 	off_t current_block_offset;
 	off_t next_block_offset;
@@ -302,6 +254,7 @@ int compress_read(int filfd, uint16_t binary_header_size, FAR uint8_t *buffer, s
 	int block_size_to_write;	/* Size to write into buffer from decompressed block */
 	int buffer_index;
 	int blocksize;
+	int block_readsize;
 #if CONFIG_COMPRESSION_TYPE == LZMA
 	unsigned int writesize;
 	unsigned int size;
@@ -327,15 +280,21 @@ int compress_read(int filfd, uint16_t binary_header_size, FAR uint8_t *buffer, s
 	/* Reading and decompressing blocks from first_block to last_block. Then writing to buffer. */
 	for (; index < first_block + no_blocks; index++) {
 		/* Read compressed 'index' block into read_buffer */
-		size = compress_read_block(filfd, binary_header_size, buffers.read_buffer, index);
-		if (size < 0) {
+		block_readsize = compress_read_block(filfd, binary_header_size, buffers.read_buffer, index);
+		if (block_readsize < 0) {
 			bcmpdbg("Read for compressed block %d failed\n", index);
-			buffer_index = size;
+			buffer_index = block_readsize;
 			goto error_compress_read;
 		}
 
+#if CONFIG_COMPRESSION_TYPE == LZMA
+		size = (unsigned int)block_readsize;
+#elif CONFIG_COMPRESSION_TYPE == MINIZ
+		size = (long unsigned int)block_readsize;
+#endif
+		writesize = compression_header->blocksize; 
 		/* Decompress block in read_buffer to out_buffer */
-		ret = compress_decompress_block(buffers.out_buffer, &writesize, buffers.read_buffer, &size, index);
+		ret = decompress_block(buffers.out_buffer, &writesize, buffers.read_buffer, &size);
 		if (ret == ERROR) {
 			bcmpdbg("Failed to decompress %d block of this binary\n", index);
 			buffer_index = ret;
@@ -402,14 +361,28 @@ int compress_init(int filfd, uint16_t offset, off_t *filelen)
 #if CONFIG_COMPRESSION_TYPE == LZMA
 	/* Allocating memory for read and out buffer to be used for LZMA decompression */
 	if (compression_header->compression_format == COMPRESSION_TYPE_LZMA) {
-		buffers.read_buffer = (unsigned char *)kmm_malloc(compression_header->blocksize + 5);
+		buffers.read_buffer = (unsigned char *)kmm_malloc(compression_header->blocksize + LZMA_PROPS_SIZE);
+		if (buffers.read_buffer == NULL) {
+			return -ENOMEM;
+		}
 		buffers.out_buffer = (unsigned char *)kmm_malloc(compression_header->blocksize);
+		if (buffers.out_buffer == NULL) {
+			kmm_free(buffers.read_buffer);
+			return -ENOMEM;
+		}
 	}
 #elif CONFIG_COMPRESSION_TYPE == MINIZ
 	/* Allocating memory for read and out buffer to be used for Miniz decompression */
 	if (compression_header->compression_format == COMPRESSION_TYPE_MINIZ) {
-		buffers.read_buffer = (unsigned char *)kmm_malloc(compression_header->blocksize);
+		buffers.read_buffer = (unsigned char *)kmm_malloc(compressBound(compression_header->blocksize));
+		if (buffers.read_buffer == NULL) {
+			return -ENOMEM;
+		}
 		buffers.out_buffer = (unsigned char *)kmm_malloc(compression_header->blocksize);
+		if (buffers.out_buffer == NULL) {
+			kmm_free(buffers.read_buffer);
+			return -ENOMEM;
+		}
 	}
 #endif
 

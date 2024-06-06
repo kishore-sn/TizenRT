@@ -54,6 +54,20 @@ config DEV_ZERO
 	default n
 	depends on NFILE_DESCRIPTORS != 0
 
+config VIRTKEY
+	bool "Enable virtual key driver"
+	default n
+	depends on NFILE_DESCRIPTORS != 0
+
+if VIRTKEY
+config VIRTKEY_QUEUE_LEN
+	int "Virtual key event queue length"
+	default 1024
+	---help---
+		Use this to specify length of event queue for virtual keyboard driver,
+		Event generator will write to the queue and receiver will read from it.
+endif
+
 menuconfig DRVR_WRITEBUFFER
 	bool "Enable write buffer support"
 	depends on SCHED_WORKQUEUE
@@ -209,6 +223,18 @@ menuconfig SPI
 
 if SPI
 source drivers/spi/Kconfig
+endif
+
+menuconfig MIPI_DSI
+        bool "MIPI Driver Support"
+        default n
+        ---help---
+                This selection enables selection of MIPI upper half driver.  This option
+                should be enabled by all platforms that support MIPI interfaces.
+                See include/tinyara/mipidsi/mipi_dsi.h for further MIPI driver information.
+
+if MIPI_DSI
+source drivers/mipidsi/Kconfig
 endif
 
 config GPIO

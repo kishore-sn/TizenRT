@@ -38,66 +38,17 @@
 #define PORTNUM 1108
 #define MAXRCVLEN 20
 
-static int s = 0;
-static int g_client_running = 0; // 0 is wait, 1 is running, -1 is running the client fails
-/**
-   * @fn                   :wait
-   * @brief                :function to wait on semaphore
-   * @scenario             :
-   * API's covered         :
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void
-   */
-static int wait(void)
-{
-	while (s <= 0) {
-		if (s == -2) {
-			return -1;
-		}
-		printf("");
-	}
-	return 0;
-}
+static sem_t g_sig_clitomain;
+static sem_t g_sig_srvtocli;
 
 /**
-   * @fn                   :nw_signal
-   * @brief                :function to signal semaphore
-   * @scenario             :
-   * API's covered         :
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void
-   */
-static void nw_signal(void)
-{
-	s = 1;
-}
-
-static void nw_error(void)
-{
-	s = -2;
-}
-
-static int _wait_client(void)
-{
-	while (g_client_running == 0) {
-		if (g_client_running == -1) {
-			return -1;
-		}
-		sleep(1);
-	}
-	return 1;
-}
-/**
-   * @testcase		   :tc_net_accept_p
-   * @brief		   :
-   * @scenario		   :
-   * @apicovered	   :accept()
-   * @precondition	   :
-   * @postcondition	   :
-   */
-
+ * @testcase		   :tc_net_accept_p
+ * @brief		   :
+ * @scenario		   :
+ * @apicovered	   :accept()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_accept_p(int fd)
 {
 	int connect_fd = accept(fd, NULL, NULL);
@@ -109,14 +60,13 @@ void tc_net_accept_p(int fd)
 }
 
 /**
-   * @testcase		   :tc_net_accept_socket_n
-   * @brief		   :
-   * @scenario		   :
-   * @apicovered	   :accept()
-   * @precondition	   :
-   * @postcondition	   :
-   */
-
+ * @testcase		   :tc_net_accept_socket_n
+ * @brief		   :
+ * @scenario		   :
+ * @apicovered	   :accept()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_accept_socket_n(int fd)
 {
 	int connect_fd = accept(-1, NULL, NULL);
@@ -126,71 +76,65 @@ void tc_net_accept_socket_n(int fd)
 }
 
 /**
-   * @fn                   :Server
-   * @brief                :
-   * @scenario             :
-   * API's covered         :socket,bind,listen,close
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void *
-   */
+ * @fn                   :Server
+ * @brief                :
+ * @scenario             :
+ * API's covered         :socket,bind,listen,close
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void *
+ */
 void *Server(void *args)
 {
 
 	struct sockaddr_in sa;
 	int socket_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (socket_fd < 0) {
-		nw_error();
-		return 0;
+		assert(0);
 	}
 
 	memset(&sa, 0, sizeof(sa));
-
 	sa.sin_family = PF_INET;
 	sa.sin_port = htons(PORTNUM);
 	sa.sin_addr.s_addr = inet_addr("127.0.0.1");
 
 	int ret = bind(socket_fd, (struct sockaddr *)&sa, sizeof(sa));
 	if (ret < 0) {
-		close(socket_fd);
-		nw_error();
-		return 0;
+		assert(0);
 	}
 
 	ret = listen(socket_fd, 1);
 	if (ret < 0) {
-		close(socket_fd);
-		nw_error();
-		return 0;
+		assert(0);
 	}
 
-	nw_signal();
+	sem_post(&g_sig_srvtocli);
+
 	tc_net_accept_p(socket_fd);
 	tc_net_accept_socket_n(socket_fd);
 
 	close(socket_fd);
+
 	return 0;
 }
 
 /**
-   * @fn                   :Client
-   * @brief                :
-   * @scenario             :
-   * API's covered         :socket,connect,close
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void *
-   */
+ * @fn                   :Client
+ * @brief                :
+ * @scenario             :
+ * API's covered         :socket,connect,close
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void *
+ */
 void *Client(void *args)
 {
-
 	int mysocket;
 	struct sockaddr_in dest;
 
 	mysocket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (mysocket < 0) {
-		g_client_running = -1;
-		return 0;
+		assert(0);
 	}
 
 	memset(&dest, 0, sizeof(dest));
@@ -198,22 +142,37 @@ void *Client(void *args)
 	dest.sin_addr.s_addr = inet_addr("127.0.0.1");
 	dest.sin_port = htons(PORTNUM);
 
-	g_client_running = 1; // running the client succeed.
-	int ret = wait();
-	if (ret < 0) {
-		close(mysocket);
-		return 0;
+	sem_post(&g_sig_clitomain);
+	int ret = sem_wait(&g_sig_srvtocli);
+	if (ret != 0) {
+		assert(0);
 	}
 
 	ret = connect(mysocket, (struct sockaddr *)&dest, sizeof(struct sockaddr));
 	if (ret < 0) {
-		close(mysocket);
-		return 0;
+		assert(0);
 	}
 
 	close(mysocket);
 	return 0;
+}
 
+static void _initialize(void)
+{
+	int ret = sem_init(&g_sig_clitomain, 0, 0);
+	if (ret != 0) {
+		assert(0);
+	}
+	ret = sem_init(&g_sig_srvtocli, 0, 0);
+	if (ret != 0) {
+		assert(0);
+	}
+}
+
+static void _deinitialize(void)
+{
+	sem_destroy(&g_sig_clitomain);
+	sem_destroy(&g_sig_srvtocli);
 }
 
 /****************************************************************************
@@ -221,20 +180,20 @@ void *Client(void *args)
  ****************************************************************************/
 int net_accept_main(void)
 {
-	pthread_t server, client;
-	s = 0;
-	g_client_running = 0;
-	pthread_create(&client, NULL, Client, NULL);
-	int ret = _wait_client();
-	if (ret < 0) {
-		pthread_join(client, NULL);
-		return -1;
-	}
+	pthread_t server;
+	pthread_t client;
 
+	_initialize();
+	pthread_create(&client, NULL, Client, NULL);
+	int ret = sem_wait(&g_sig_clitomain);
+	if (ret != 0) {
+		assert(0);
+	}
 	pthread_create(&server, NULL, Server, NULL);
 
 	pthread_join(server, NULL);
 	pthread_join(client, NULL);
 
+	_deinitialize();
 	return 0;
 }

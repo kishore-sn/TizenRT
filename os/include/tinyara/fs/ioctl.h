@@ -101,7 +101,11 @@
 #define _IOTBUSBASE     (0x2600)	/* iotbus ioctl commands */
 #define _FBIOCBASE      (0x2700)	/* Frame buffer character driver ioctl commands */
 #define _CPULOADBASE    (0x2800)	/* cpuload ioctl commands */
+#define _THERMALBASE	(0x2900)	/* thermal camera control ioctl commands */
+#define _COMPBASE       (0x2a00)	/* compress ioctl commands */
+#define _PMBASE         (0x2b00)    	/* pm ioctl commands */
 #define _TESTIOCBASE    (0xfe00)	/* KERNEL TEST DRV module ioctl commands */
+#define _MIPIDSIBASE    (0x3900) 	/* Mipidsi device ioctl commands */
 
 
 
@@ -244,7 +248,13 @@
 										 * IN:	None
 										 * OUT: None (ioctl return value provides
 										 *      success/failure indication). */
-#define BIOC_FIBMAP     _BIOC(0x000C)	/* Reveal Physical sector number from bitmap
+
+#define BIOC_CORRUPTION _BIOC(0x000C)	/* Request corrupt blocks for testing(usually remove root sector)
+										 * IN:	None
+										 * OUT: None (ioctl return value provides
+										 *		success/failure indication). */
+
+#define BIOC_FIBMAP     _BIOC(0x000D)	/* Reveal Physical sector number from bitmap
 										 * of block device.
 										 * IN:	Logical sector number which need
 										 *		to reveal physical sector.
@@ -382,6 +392,15 @@
 #define _SPIIOCVALID(c)   (_IOC_TYPE(c) == _SPIBASE)
 #define _SPIIOC(nr)       _IOC(_SPIBASE, nr)
 
+/* LCD character driver ioctl definitions ***********************************/
+/* (see nuttx/include/lcd/slcd_codec.h */
+
+#define _LCDIOCVALID(c)   (_IOC_TYPE(c)==_SLCDIOCBASE)
+#define _LCDIOC(nr)       _IOC(_SLCDIOCBASE,nr)
+
+#define _MIPIDSIIOC(nr)        _IOC(_MIPIDSIBASE,nr)
+#define _MIPIDSIIOCVALID(c)    (_IOC_TYPE(c)==_MIPIDSIBASE)
+
 /* boardctl() command definitions *******************************************/
 #define _BOARDIOCVALID(c)  (_IOC_TYPE(c) == _BOARDBASE)
 #define _BOARDIOC(nr)      _IOC(_BOARDBASE, nr)
@@ -425,6 +444,28 @@
 
 #define MMINFOIOC_HEAP              _MMINFOIOC(0x0001)
 #define MMINFOIOC_PARSE             _MMINFOIOC(0x0002)
+#define MMINFOIOC_MNG_ALLOCFAIL     _MMINFOIOC(0x0003)
+
+/* Compress driver ioctl definitions ************************/
+#define _COMPIOCVALID(c)    (_IOC_TYPE(c) == _COMPBASE)
+#define _COMPIOC(nr)        _IOC(_COMPBASE, nr)
+
+#define COMPIOC_COMPRESS           _COMPIOC(0x0001)
+#define COMPIOC_GET_COMP_TYPE      _COMPIOC(0x0002)
+#define COMPIOC_GET_COMP_NAME      _COMPIOC(0x0003)
+#define COMPIOC_DECOMPRESS	   _COMPIOC(0x0004)
+
+/* Pm driver ioctl definitions *****************************/
+#define _PMIOCVALID(c)      (_IOC_TYPE(c) == _PMBASE)
+#define _PMIOC(nr)          _IOC(_PMBASE, nr)
+
+#define PMIOC_SUSPEND            _PMIOC(0x0001)
+#define PMIOC_RESUME             _PMIOC(0x0002)
+#define PMIOC_SLEEP              _PMIOC(0x0003)
+#define PMIOC_TIMEDSUSPEND       _PMIOC(0x0004)
+#ifdef CONFIG_PM_DVFS
+#define PMIOC_TUNEFREQ           _PMIOC(0x0005)
+#endif
 
 /* Cpuload driver ioctl definitions ************************/
 

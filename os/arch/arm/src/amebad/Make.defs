@@ -169,16 +169,21 @@ CHIP_CSRCS += amebad_rtc_lowerhalf.c
 CHIP_CSRCS += amebad_rtc.c
 CHIP_CSRCS += amebad_watchdog_lowerhalf.c
 CHIP_CSRCS += amebad_i2c.c
+ifeq ($(CONFIG_AMEBAD_I2S),y)
 CHIP_CSRCS += amebad_i2s.c
+endif
+ifeq ($(CONFIG_SPI),y)
 CHIP_CSRCS += amebad_spi.c
-
+endif
 ifeq ($(CONFIG_BOARDCTL_RESET),y)
 CHIP_CSRCS += amebad_systemreset.c
 endif
 ifeq ($(CONFIG_SYSTEM_REBOOT_REASON),y)
 CHIP_CSRCS += amebad_reboot_reason.c
 endif
-
+ifeq ($(CONFIG_BINARY_SIGNING),y)
+CHIP_CSRCS += amebad_signature.c
+endif
 ifeq ($(CONFIG_AMEBAD_BLE),y)
 ifeq ($(CONFIG_ARCH_FPU),y)
 EXTRA_LIBS += ${TOPDIR}/board/rtl8721csm/src/libs/lib_btgap_fpu.a
@@ -195,5 +200,23 @@ ifeq ($(CONFIG_ARCH_FPU),y)
 EXTRA_LIBS += ${TOPDIR}/board/rtl8721csm/src/libs/cmse_implib_fpu.a
 else
 EXTRA_LIBS += ${TOPDIR}/board/rtl8721csm/src/libs/cmse_implib.a
+endif
+endif
+
+ifeq ($(CONFIG_AMEBAD_WIFI),y)
+ifeq ($(CONFIG_ARCH_FPU),y)
+EXTRA_LIBS += $(TOPDIR)/board/rtl8721csm/src/libs/lib_wlan_fpu.a
+EXTRA_LIBS += $(TOPDIR)/board/rtl8721csm/src/libs/lib_wps_fpu.a
+else
+EXTRA_LIBS += $(TOPDIR)/board/rtl8721csm/src/libs/lib_wlan.a
+EXTRA_LIBS += $(TOPDIR)/board/rtl8721csm/src/libs/lib_wps.a
+endif
+endif
+
+ifeq ($(CONFIG_AMEBAD_CMSIS_NN),y)
+ifeq ($(CONFIG_ARCH_FPU),y)
+EXTRA_LIBS += $(TOPDIR)/board/rtl8721csm/src/libs/lib_cmsis_nn_fpu.a
+else
+EXTRA_LIBS += $(TOPDIR)/board/rtl8721csm/src/libs/lib_cmsis_nn.a
 endif
 endif

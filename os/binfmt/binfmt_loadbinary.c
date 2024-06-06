@@ -33,13 +33,13 @@
 #include <tinyara/sched.h>
 #include <tinyara/binfmt/binfmt.h>
 #include <tinyara/binary_manager.h>
-#include <tinyara/mpu.h>
 
 #ifdef CONFIG_SAVE_BIN_SECTION_ADDR
 #include "libelf/libelf.h"
 #endif
 
 #include "binfmt.h"
+#include "binfmt_arch_apis.h"
 #include "binary_manager/binary_manager.h"
 
 #ifdef CONFIG_BINFMT_ENABLE
@@ -86,28 +86,21 @@ int load_binary(int binary_idx, FAR const char *filename, load_attr_t *load_attr
 	int pid;
 	int errcode;
 	int ret;
-#if (defined(CONFIG_SUPPORT_COMMON_BINARY) && (defined(CONFIG_ARMV7M_MPU) || defined(CONFIG_ARMV8M_MPU)))
-	uint32_t com_bin_mpu_regs[MPU_REG_NUMBER * MPU_NUM_REGIONS];	/* We need 3 register values to configure each MPU region */
-#endif
 
 	/* Sanity check */
-	if (load_attr && load_attr->bin_size <= 0) {
+	if (!load_attr) {
+		berr("ERROR: Invalid load_attr\n");
+		errcode = -EINVAL;
+		goto errout;
+	} else if (load_attr->bin_size <= 0) {
 		berr("ERROR: Invalid file length!\n");
 		errcode = -EINVAL;
 		goto errout;
 	}
 
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-
-#ifdef CONFIG_SUPPORT_COMMON_BINARY
-	if (load_attr) {
-		bin = load_attr->binp;
-	} else {
-		bin = g_lib_binp;
-	}
-#else
 	bin = load_attr->binp;
-#endif
+
 	/* If we find a non-null value for bin, it means that
 	 * we are in a reload scenario.
 	 */
@@ -118,8 +111,8 @@ int load_binary(int binary_idx, FAR const char *filename, load_attr_t *load_attr
 			goto errout_with_bin;
 		}
 
-		memcpy((void *)bin->datastart, (const void *)bin->data_backup, bin->datasize);
-		memset((void *)bin->bssstart, 0, bin->bsssize);
+		memcpy((void *)bin->sections[BIN_DATA], (const void *)bin->data_backup, bin->sizes[BIN_DATA]);
+		memset((void *)bin->sections[BIN_BSS], 0, bin->sizes[BIN_BSS]);
 		bin->reload = false;
 	} else {
 #endif
@@ -136,27 +129,36 @@ int load_binary(int binary_idx, FAR const char *filename, load_attr_t *load_attr
 		/* Initialize the binary structure */
 
 		bin->filename = filename;
+
 		if (load_attr) {
-			bin->exports = NULL;
-			bin->nexports = 0;
-			bin->filelen = load_attr->bin_size;
-			bin->offset = load_attr->offset;
-			bin->stacksize = load_attr->stack_size;
-			bin->priority = load_attr->priority;
-			bin->compression_type = load_attr->compression_type;
-			bin->binary_idx = binary_idx;
-			bin->bin_ver = load_attr->bin_ver;
-#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-			strncpy(bin->bin_name, load_attr->bin_name, BIN_NAME_MAX);
-#else
-			bin->bin_name = load_attr->bin_name;
-#endif
-			bin->ramsize = load_attr->ram_size;
-		} else {
 #ifdef CONFIG_SUPPORT_COMMON_BINARY
-			bin->islibrary = true;
-			g_lib_binp = bin;
+			if (binary_idx == BM_CMNLIB_IDX) {
+				bin->islibrary = true;
+				bin->filelen = load_attr->bin_size;
+				bin->offset = load_attr->offset;
+				bin->bin_ver = load_attr->bin_ver;
+#ifdef CONFIG_HAVE_CXX
+				bin->run_library_ctors = true;
 #endif
+				g_lib_binp = bin;
+			} else
+#endif
+			{
+				bin->exports = NULL;
+				bin->nexports = 0;
+				bin->filelen = load_attr->bin_size;
+				bin->offset = load_attr->offset;
+				bin->stacksize = load_attr->stack_size;
+				bin->priority = load_attr->priority;
+				bin->binary_idx = binary_idx;
+				bin->bin_ver = load_attr->bin_ver;
+#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
+				strncpy(bin->bin_name, load_attr->bin_name, BIN_NAME_MAX);
+#else
+				bin->bin_name = load_attr->bin_name;
+#endif
+				bin->ramsize = load_attr->ram_size;
+			}
 		}
 
 		/* Load the module into memory */
@@ -174,40 +176,39 @@ int load_binary(int binary_idx, FAR const char *filename, load_attr_t *load_attr
 			goto errout_with_bin;
 		}
 
-		memcpy((void *)bin->data_backup, (const void *)bin->datastart, bin->datasize);
+		memcpy((void *)bin->data_backup, (const void *)bin->sections[BIN_DATA], bin->sizes[BIN_DATA]);
 	}
 #endif
 
+	/* Print Binary section address & size details */
+
+	binfo("[%s] text    start addr =  0x%x  size = %u\n", bin->bin_name, bin->sections[BIN_TEXT], bin->sizes[BIN_TEXT]);
+#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
+	binfo("[%s] rodata  start addr =  0x%x  size = %u\n", bin->bin_name, bin->sections[BIN_RO], bin->sizes[BIN_RO]);
+#endif
+	binfo("[%s] data    start addr =  0x%x  size = %u\n", bin->bin_name, bin->sections[BIN_DATA], bin->sizes[BIN_DATA]);
+	binfo("[%s] bss     start addr =  0x%x  size = %u\n", bin->bin_name, bin->sections[BIN_BSS], bin->sizes[BIN_BSS]);
+
+	elf_save_bin_section_addr(bin);
+	binfmt_arch_init_mem_protect(bin);
+
 #ifdef CONFIG_SUPPORT_COMMON_BINARY
 	if (bin->islibrary) {
-		g_umm_app_id = (uint32_t *)(bin->datastart + 4);
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-		elf_save_bin_section_addr(bin);
-#endif
+		g_umm_app_id = (uint32_t *)(bin->sections[BIN_DATA] + 4);
 
-#if (defined(CONFIG_ARMV7M_MPU) || defined(CONFIG_ARMV8M_MPU))
-		uint8_t nregion = mpu_get_nregion_info(MPU_REGION_COMMON_BIN);
+		/* Update binary table */
+		BIN_STATE(binary_idx) = BINARY_RUNNING;
+		BIN_LOADVER(binary_idx) = bin->bin_ver;
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-		/* Get MPU register values for MPU regions */
-		mpu_get_register_config_value(&com_bin_mpu_regs[0], nregion - 3, (uintptr_t)bin->alloc[ALLOC_TEXT], bin->textsize, true,  true);
-		mpu_get_register_config_value(&com_bin_mpu_regs[3], nregion - 2, (uintptr_t)bin->alloc[ALLOC_RO],   bin->rosize,   true,  false);
-		mpu_get_register_config_value(&com_bin_mpu_regs[6], nregion - 1, (uintptr_t)bin->alloc[ALLOC_DATA], bin->ramsize,  false, false);
-#else
-		mpu_get_register_config_value(&com_bin_mpu_regs[0], nregion - 1, (uintptr_t)bin->ramstart,          bin->ramsize,  false, true);
+		BIN_LOADINFO(binary_idx) = bin;
 #endif
-		/* Set MPU register values to real MPU h/w */
-		for (int i = 0; i < MPU_REG_NUMBER * MPU_NUM_REGIONS; i += MPU_REG_NUMBER) {
-			up_mpu_set_register(&com_bin_mpu_regs[i]);
-		}
-#endif
-
 		return OK;
 	}
 	/* If we support common binary, then we need to place a pointer to the app's heap object
 	 * into the heap table which is present at the start of the common library data section
 	 */
-	uint32_t *heap_table = (uint32_t *)(g_lib_binp->datastart + 8);
-	heap_table[binary_idx] = bin->heapstart;
+	uint32_t *heap_table = (uint32_t *)(g_lib_binp->sections[BIN_DATA] + 8);
+	heap_table[binary_idx] = bin->sections[BIN_HEAP];
 #endif
 
 	/* Start the module */
@@ -215,20 +216,9 @@ int load_binary(int binary_idx, FAR const char *filename, load_attr_t *load_attr
 	if (pid < 0) {
 		errcode = pid;
 		berr("ERROR: Failed to execute program '%s': %d\n", filename, errcode);
+		elf_delete_bin_section_addr(bin->binary_idx);
 		goto errout_with_unload;
 	}
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-	elf_save_bin_section_addr(bin);
-#endif
-
-	/* Print Binary section address & size details */
-
-	binfo("[%s] text    start addr =  0x%x  size = %u\n", bin->bin_name, (uint32_t)bin->alloc[ALLOC_TEXT], bin->textsize);
-#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-	binfo("[%s] rodata  start addr =  0x%x  size = %u\n", bin->bin_name, (uint32_t)bin->alloc[ALLOC_RO], bin->rosize);
-	binfo("[%s] data    start addr =  0x%x  size = %u\n", bin->bin_name, (uint32_t)bin->datastart, bin->datasize);
-	binfo("[%s] bss     start addr =  0x%x  size = %u\n", bin->bin_name, (uint32_t)bin->bssstart, bin->bsssize);
-#endif
 
 	return pid;
 

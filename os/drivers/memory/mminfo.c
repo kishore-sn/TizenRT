@@ -116,18 +116,44 @@ static int mminfo_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 			heap = mm_get_app_heap_with_name(option->app_name);
 			break;
 #endif
+
 		default:
 			break;
 		}
 		if (heap == NULL) {
 			return -EINVAL;
 		}
+		if (option->mode == HEAPINFO_DUMP_HEAP) {
+			heapinfo_dump_heap(heap);
+			return OK;
+		}
 		if (option->mode == HEAPINFO_INIT_PEAK) {
 			heap->peak_alloc_size = 0;
 			return OK;
 		}
-		heapinfo_parse_heap(heap, option->mode, option->pid);
+#if CONFIG_KMM_NHEAPS > 1
+		if (option->heap_type == HEAPINFO_HEAP_TYPE_KERNEL) {
+			int heap_idx;
+			for (heap_idx = HEAP_START_IDX; heap_idx <= HEAP_END_IDX; heap_idx++) {
+				printf("\n [HEAP %d]\n", heap_idx);
+				heapinfo_parse_heap(&heap[heap_idx], option->mode, option->pid);
+			}
+		} else
+#endif
+		{
+			heapinfo_parse_heap(heap, option->mode, option->pid);
+		}
 		ret = OK;
+		break;
+#endif
+#ifdef CONFIG_APP_BINARY_SEPARATION
+	case MMINFOIOC_MNG_ALLOCFAIL:
+		/* There is a single heap for user. So start and end indexes of heap are always 0. */
+		mm_manage_alloc_fail(BASE_HEAP, 0, 0, ((struct mm_alloc_fail_s *)arg)->size, USER_HEAP
+#if defined(CONFIG_DEBUG_MM_HEAPINFO)
+				, ((struct mm_alloc_fail_s *)arg)->caller
+#endif
+				);
 		break;
 #endif
 	default:

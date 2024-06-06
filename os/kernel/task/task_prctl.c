@@ -87,6 +87,10 @@
 #include <tinyara/reboot_reason.h>
 #endif
 
+#ifdef CONFIG_SECURITY_LEVEL
+#include <tinyara/security_level.h>
+#endif
+
 /************************************************************************
  * Private Functions
  ************************************************************************/
@@ -106,7 +110,7 @@
  * Returned Value:
  *   The returned value may depend on the specific commnand.  For PR_SET_NAME
  *   and PR_GET_NAME, the returned value of 0 indicates successful operation.
- *   On any failure, -1 is retruend and the errno value is set appropriately.
+ *   On any failure, -1 is returned and the errno value is set appropriately.
  *
  *     EINVAL The value of 'option' is not recognized.
  *     EFAULT optional arg1 is not a valid address.
@@ -124,33 +128,34 @@ int prctl(int option, ...)
 	va_start(ap, option);
 	switch (option) {
 	case PR_SET_NAME:
+	case PR_SET_NAME_BYPID:
 	case PR_GET_NAME:
+	case PR_GET_NAME_BYPID:
 #if CONFIG_TASK_NAME_SIZE > 0
 	{
 		/* Get the prctl arguments */
 
 		FAR char *name = va_arg(ap, FAR char *);
-		int pid = va_arg(ap, int);
 		FAR struct tcb_s *tcb;
 
-		/* Get the TCB associated with the PID (handling the special case of
-		 * pid==0 meaning "this thread")
-		 */
+		if (option == PR_SET_NAME_BYPID || option == PR_GET_NAME_BYPID) {
+			int pid = va_arg(ap, int);
 
-		if (!pid) {
-			tcb = this_task();
+			/* Get the TCB associated with the PID */
+			tcb = sched_gettcb((pid_t)pid);
+
+			/* An invalid pid will be indicated by a NULL TCB returned from
+			 * sched_gettcb()
+			 */
+
+			if (!tcb) {
+				sdbg("Pid does not correspond to a task: %d\n", pid);
+				err = ESRCH;
+				goto errout;
+			}
 		} else {
-			tcb = sched_gettcb(pid);
-		}
-
-		/* An invalid pid will be indicated by a NULL TCB returned from
-		 * sched_gettcb()
-		 */
-
-		if (!tcb) {
-			sdbg("Pid does not correspond to a task: %d\n", pid);
-			err = ESRCH;
-			goto errout;
+			/* Get the current running TCB */
+			tcb = this_task();
 		}
 
 		/* A pointer to the task name storage must also be provided */
@@ -163,7 +168,7 @@ int prctl(int option, ...)
 
 		/* Now get or set the task name */
 
-		if (option == PR_SET_NAME) {
+		if (option == PR_SET_NAME || option == PR_SET_NAME_BYPID) {
 			/* Ensure that tcb->name will be null-terminated, truncating if necessary */
 
 			strncpy(tcb->name, name, CONFIG_TASK_NAME_SIZE);
@@ -353,6 +358,19 @@ int prctl(int option, ...)
 		return ret;
 	}
 #endif
+#ifdef CONFIG_MEM_LEAK_CHECKER
+	case PR_MEM_LEAK_CHECKER:
+	{
+		int ret;
+		int checker_pid;
+		checker_pid = va_arg(ap, int);
+
+		ret = run_all_mem_leak_checker(checker_pid);
+		va_end(ap);
+
+		return ret;
+	}
+#endif
 #ifdef CONFIG_SYSTEM_REBOOT_REASON
 	case PR_REBOOT_REASON_READ:
 	{
@@ -375,6 +393,46 @@ int prctl(int option, ...)
 		return OK;
 	}
 #endif
+#ifdef CONFIG_SECURITY_LEVEL
+	case PR_SET_SECURITY_LEVEL:
+	{
+		int ret = set_security_level();
+		va_end(ap);
+		return ret;
+	}
+	case PR_GET_SECURITY_LEVEL:
+	{
+		int ret = get_security_level();
+		va_end(ap);
+		return ret;
+	}
+#endif
+	case PR_GET_TGTASK:
+	{
+		int *ppid = va_arg(ap, int *);
+#if !defined(CONFIG_DISABLE_PTHREAD) && defined(CONFIG_SCHED_HAVE_PARENT)
+		FAR struct tcb_s *tcb = this_task();
+		if (!tcb) {
+			sdbg("Invalied tcb");
+			err = ESRCH;
+			goto errout;
+		}
+		/* Get ID of the main task in the group */
+		FAR struct task_group_s *group = tcb->group;
+		if (!group) {
+			sdbg("Invalied group");
+			err = ESRCH;
+			goto errout;
+		}
+		*ppid = group->tg_task;
+#else
+		/* Not Support parent-child relationship */
+		*ppid = getpid();
+#endif
+		svdbg("Task group id = %d\n", *ppid);
+		va_end(ap);
+		return OK;
+	}
 	default:
 		sdbg("Unrecognized option: %d\n", option);
 		err = EINVAL;

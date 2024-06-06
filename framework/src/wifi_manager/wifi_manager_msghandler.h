@@ -17,6 +17,8 @@
  ****************************************************************************/
 #pragma once
 
+#include <semaphore.h>
+
 struct wifimgr_msg {
 	wifimgr_evt_e event;
 	wifi_manager_result_e result;
@@ -26,5 +28,5 @@ struct wifimgr_msg {
 typedef struct wifimgr_msg wifimgr_msg_s;
 
 // application doesn't need to get messages from queue
-// int wifimgr_get_message(struct wifimgr_msg *msg, int flag);
+// member result in struct wifimgr_msg_s will be filled result of wifimgr_post_message()
 int wifimgr_post_message(wifimgr_msg_s *msg);

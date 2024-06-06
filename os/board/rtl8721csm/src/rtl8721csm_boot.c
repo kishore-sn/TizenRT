@@ -180,8 +180,6 @@ void board_gpio_initialize(void)
 			PA_3, PIN_OUTPUT, PullNone
 		}, {
 			PB_5, PIN_OUTPUT, PullNone
-		}, {
-			PA_12, PIN_INPUT, PullDown
 		},
 		/*		{PA_6, PIN_OUTPUT, PullNone},
 				{PA_7, PIN_OUTPUT, PullNone},
@@ -250,7 +248,7 @@ void board_gpio_initialize(void)
 #endif
 }
 
-void amebad_mount_partions(void)
+void amebad_mount_partitions(void)
 {
 #ifdef CONFIG_FLASH_PARTITION
 	int ret;
@@ -259,7 +257,7 @@ void amebad_mount_partions(void)
 
 	mtd = (FAR struct mtd_dev_s *)mtd_initialize();
 	/* Configure mtd partitions */
-	ret = configure_mtd_partitions(mtd, &g_flash_part_data, &partinfo);
+	ret = configure_mtd_partitions(mtd, 0, &partinfo);
 	if (ret != OK) {
 		lldbg("ERROR: configure_mtd_partitions failed\n");
 		return;
@@ -311,7 +309,10 @@ void board_initialize(void)
 	shell_init_rom(0, 0);
 	//shell_init_ram();
 	ipc_table_init();
-	amebad_mount_partions();
+#ifdef CONFIG_FTL_ENABLED
+	app_ftl_init();
+#endif
+	amebad_mount_partitions();
 	board_gpio_initialize();
 	board_i2c_initialize();
 	board_spi_initialize();
@@ -339,9 +340,6 @@ void board_initialize(void)
 			lldbg("Failed to register the RTC driver: %d\n", ret);
 		}
 	}
-#endif
-#ifdef CONFIG_FTL_ENABLED
-	app_ftl_init();
 #endif
 }
 #else

@@ -339,11 +339,26 @@ int up_use_stack(FAR struct tcb_s *tcb, FAR void *stack, size_t stack_size);
  *
  *   - adj_stack_size: Stack size after removal of the stack frame from
  *     the stack
- *   - adj_stack_ptr: Adjusted initial stack pointer after the frame has
- *     been removed from the stack.  This will still be the initial value
- *     of the stack pointer when the task is started.
+ *   - stack_base_ptr: Adjusted stack base pointer after the TLS Data and
+ *     Arguments has been removed from the stack allocation.
  *
- * Inputs:
+ *   Here is the diagram after some allocation(tls, arg):
+ *
+ *                   +-------------+ <-stack_alloc_ptr(lowest)
+ *                   |  TLS Data   |
+ *                   +-------------+
+ *                   |  Arguments  |
+ *  stack_base_ptr-> +-------------+\
+ *                   |  Available  | +
+ *                   |    Stack    | |
+ *                |  |             | |
+ *                |  |             | +->adj_stack_size
+ *                v  |             | |
+ *                   |             | |
+ *                   |             | +
+ *                   +-------------+/
+ *
+ * Input Parameters:
  *   - tcb:  The TCB of new task
  *   - frame_size:  The size of the stack frame to allocate.
  *
@@ -429,7 +444,17 @@ void up_allocate_secure_context(TZ_ModuleId_t size);
  *
  ****************************************************************************/
 
-void up_free_secure_context();
+void up_free_secure_context(void);
+
+#else		//CONFIG_ARMV8M_TRUSTZONE
+
+// Adding below defines to prevent errors when vendor code tries to call
+// security API's which are not implemented as they are not required by the 
+// architecture. For example ARMV7A does not use NSC based TZ calls.
+
+#define up_allocate_secure_context(size)
+#define up_free_secure_context()
+
 #endif
 
 /************************************************************************************
@@ -1846,6 +1871,134 @@ void weak_function sched_process_cpuload(void);
 
 void irq_dispatch(int irq, FAR void *context);
 
+#ifdef CONFIG_SMP
+/****************************************************************************
+ * Name: up_cpu_start
+ *
+ * Description:
+ *   In an SMP configuration, only one CPU is initially active (CPU 0).
+ *   System initialization occurs on that single thread. At the completion of
+ *   the initialization of the OS, just before beginning normal multitasking,
+ *   the additional CPUs would be started by calling this function.
+ *
+ *   Each CPU is provided the entry point to its IDLE task when started.  A
+ *   TCB for each CPU's IDLE task has been initialized and placed in the
+ *   CPU's g_assignedtasks[cpu] list.  No stack has been allocated or
+ *   initialized.
+ *
+ *   The OS initialization logic calls this function repeatedly until each
+ *   CPU has been started, 1 through (CONFIG_SMP_NCPUS-1).
+ *
+ * Input Parameters:
+ *   cpu - The index of the CPU being started.  This will be a numeric
+ *         value in the range of one to (CONFIG_SMP_NCPUS-1).
+ *         (CPU 0 is already active)
+ *
+ * Returned Value:
+ *   Zero on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int up_cpu_start(int cpu);
+
+/****************************************************************************
+ * Name: up_cpu_pause
+ *
+ * Description:
+ *   Save the state of the current task at the head of the
+ *   g_assignedtasks[cpu] task list and then pause task execution on the
+ *   CPU.
+ *
+ *   This function is called by the OS when the logic executing on one CPU
+ *   needs to modify the state of the g_assignedtasks[cpu] list for another
+ *   CPU.
+ *
+ * Input Parameters:
+ *   cpu - The index of the CPU to be paused.
+ *
+ * Returned Value:
+ *   Zero on success; a negated errno value on failure.
+ *
+ * Assumptions:
+ *   Called from within a critical section; up_cpu_resume() must be called
+ *   later while still within the same critical section.
+ *
+ ****************************************************************************/
+
+int up_cpu_pause(int cpu);
+
+/****************************************************************************
+ * Name: up_cpu_pausereq
+ *
+ * Description:
+ *   Return true if a pause request is pending for this CPU.
+ *
+ * Input Parameters:
+ *   cpu - The index of the CPU to be queried
+ *
+ * Returned Value:
+ *   true   = a pause request is pending.
+ *   false = no pasue request is pending.
+ *
+ ****************************************************************************/
+
+bool up_cpu_pausereq(int cpu);
+
+/****************************************************************************
+ * Name: up_cpu_paused
+ *
+ * Description:
+ *   Handle a pause request from another CPU.  Normally, this logic is
+ *   executed from interrupt handling logic within the architecture-specific
+ *   However, it is sometimes necessary to perform the pending pause
+ *   operation in other contexts where the interrupt cannot be taken
+ *   in order to avoid deadlocks.
+ *
+ *   This function performs the following operations:
+ *
+ *   1. It saves the current task state at the head of the current assigned
+ *      task list.
+ *   2. It waits on a spinlock, then
+ *   3. Returns from interrupt, restoring the state of the new task at the
+ *      head of the ready to run list.
+ *
+ * Input Parameters:
+ *   cpu - The index of the CPU to be paused
+ *
+ * Returned Value:
+ *   On success, OK is returned.  Otherwise, a negated errno value indicating
+ *   the nature of the failure is returned.
+ *
+ ****************************************************************************/
+
+int up_cpu_paused(int cpu);
+
+/****************************************************************************
+ * Name: up_cpu_resume
+ *
+ * Description:
+ *   Restart the cpu after it was paused via up_cpu_pause(), restoring the
+ *   state of the task at the head of the g_assignedtasks[cpu] list, and
+ *   resume normal tasking.
+ *
+ *   This function is called after up_cpu_pause in order ot resume operation
+ *   of the CPU after modifying its g_assignedtasks[cpu] list.
+ *
+ * Input Parameters:
+ *   cpu - The index of the CPU being resumed.
+ *
+ * Returned Value:
+ *   Zero on success; a negated errno value on failure.
+ *
+ * Assumptions:
+ *   Called from within a critical section; up_cpu_pause() must have
+ *   previously been called within the same critical section.
+ *
+ ****************************************************************************/
+
+int up_cpu_resume(int cpu);
+#endif /* CONFIG_SMP */
+
 /****************************************************************************
  * Name: up_check_stack and friends
  *
@@ -1867,6 +2020,7 @@ struct tcb_s;
 size_t up_check_tcbstack(FAR struct tcb_s *tcb);
 ssize_t up_check_tcbstack_remain(FAR struct tcb_s *tcb);
 size_t up_check_stack(void);
+size_t up_check_assertstack(uintptr_t start, uintptr_t end);
 ssize_t up_check_stack_remain(void);
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
 size_t up_check_intstack(void);
@@ -1985,6 +2139,45 @@ int up_rtc_getdatetime(FAR struct tm *tp);
 
 #ifdef CONFIG_RTC
 int up_rtc_settime(FAR const struct timespec *tp);
+#endif
+
+/****************************************************************************
+ * Name: up_register_wakehandler
+ *
+ * Description:
+ *   This function registers a handler for systick compensation when the core wakes up
+ *   from sleep mode.
+ *
+ * Input Parameters:
+ *   handler - A pointer to a function for systick compensation on the core wakeup.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+#ifdef CONFIG_PM_TICKSUPPRESS
+void up_register_wakehandler(void (*handler)(clock_t));
+#endif
+
+/****************************************************************************
+ * Name: up_set_dvfs
+ *
+ * Description:
+ *   BSP operation called from wrapper API pm_dvfs() to reduce the clock
+ *   frequency of CPU core. It can be applied on some scenario which when low
+ *	 loading activity is expected, we can invoke this API to wind down
+ *   CPU cores with high operating frequency, to enhance the effectiveness
+ *	 for power saving.
+ *
+ * Input Parameters:
+ *   div_lvl - voltage frequency scaling level
+ *
+ * Returned Value:
+ *   None.
+ *
+ ****************************************************************************/
+#ifdef CONFIG_PM_DVFS
+void up_set_dvfs(int div_lvl);
 #endif
 
 /****************************************************************************
@@ -2224,17 +2417,6 @@ bool is_kernel_data_space(void *addr);
  ****************************************************************************/
 bool is_kernel_space(void *addr);
 
-#ifdef CONFIG_SUPPORT_COMMON_BINARY
-/****************************************************************************
- * Name: is_common_library_space
- *
- * Description:
- *   Check the address is in common library space or not
- *
- ****************************************************************************/
-bool is_common_library_space(void *addr);
-
-#endif
 #endif
 
 #undef EXTERN

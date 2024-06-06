@@ -68,15 +68,7 @@ endif
 #########################################
 ifeq ($(CONFIG_APP_BINARY_SEPARATION),y)
 
-BIN = wifi
-# need to update
-BIN_TYPE = ELF
-BIN_VER = 20190412
-DYNAMIC_RAM_SIZE = 512000
-KERNEL_VER = 2.0
-STACKSIZE = 8192
-PRIORITY = 180
-LOADING_PRIORITY = MID
+BIN = $(CONFIG_APP2_BIN_NAME)
 
 include $(TOPDIR)/$(LOADABLEDIR)/loadable.mk
 

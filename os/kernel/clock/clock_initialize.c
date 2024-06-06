@@ -212,20 +212,42 @@ static void clock_inittime(void)
  ****************************************************************************/
 
 #ifdef CONFIG_INIT_SYSTEM_TIME
+#ifdef CONFIG_INIT_SYSTEM_TIME_WITH_MIDNIGHT
+#define SYSTIME_INIT_TIME_FORMAT "%Y-%m-%d"
+#else
+#define SYSTIME_INIT_TIME_FORMAT "%Y-%m-%d %T"
+#endif
+
 static void initialize_system_time(void)
 {
 	struct tm init_time;
 	struct timespec ts;
 	char *ret;
 
-	memset(&init_time, 0, sizeof(struct tm));
-	ret = strptime(CONFIG_VERSION_BUILD_TIME, "%Y-%m-%d %T", &init_time);
+	/* Initialize the members not used in strptime */
+
+#ifdef CONFIG_INIT_SYSTEM_TIME_WITH_MIDNIGHT
+	init_time.tm_sec = 0;
+	init_time.tm_min = 0;
+	init_time.tm_hour = 0;
+#endif
+	init_time.tm_wday = 0;
+	init_time.tm_yday = 0;
+	init_time.tm_isdst = 0;
+
+	/* Get build date */
+
+	ret = strptime(CONFIG_VERSION_BUILD_TIME, SYSTIME_INIT_TIME_FORMAT, &init_time);
 	if (ret == NULL) {
 		return;
 	}
 
+	/* Convert struct tm to struct timespec */
+
 	ts.tv_sec = mktime(&init_time);
 	ts.tv_nsec = 0;
+
+	/* Set system init time for rtc */
 
 	(void)up_rtc_settime(&ts);
 }
@@ -294,9 +316,9 @@ void clock_synchronize(void)
 
 	/* Re-initialize the time value to match the RTC */
 
-	flags = irqsave();
+	flags = enter_critical_section();
 	clock_inittime();
-	irqrestore(flags);
+	leave_critical_section(flags);
 }
 #endif
 
@@ -317,4 +339,11 @@ void clock_timer(void)
 
 	g_system_timer++;
 }
+
+#ifdef CONFIG_SCHED_TICKSUPPRESS
+void clock_timer_nohz(clock_t ticks)
+{
+	g_system_timer += ticks;
+}
+#endif
 #endif

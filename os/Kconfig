@@ -39,6 +39,20 @@ config DEFAULT_SMALL
 		have already been selected in your configuration file.  This applies
 		only to new settings that require a default value.
 
+config DOCKER_VERSION
+	string "Docker Image Version"
+	default "1.5.8"
+	---help---
+		This config indicates docker image version. We have developed distinct
+		version of docker images tailored to each toolchain required by different
+		chipset's configs. This approach streamlines development by providing
+		specific environments that align with the chipset's configs.
+
+		NOTE: C++ exception support requires toolchain version 10.3.1. If you are
+		enabling C++ exception then use docker image version 2.0.0.
+
+		Possible Versions: Please check https://hub.docker.com/r/tizenrt/tizenrt
+
 choice
 	prompt "Build Host Platform"
 	default HOST_LINUX
@@ -229,11 +243,13 @@ config SUPPORT_COMMON_BINARY
 
 if SUPPORT_COMMON_BINARY
 
-config COMMON_BINARY_PATH
-	string "Path where common binary is stored"
-	default "/mnt/"
+config COMMON_BINARY_VERSION
+	string "Common binary version (YYMMDD)"
+	default 200204
 	---help---
-		Path where common binary is stored.
+		This config indicates common binary version which has a "YYMMDD" format.
+		It is included in common binary header and binary manager uses it to check the latest binary.
+		So it should be set to a higher value than versions of old binaries if you want to make the binary the latest version.
 
 config COMMON_BINARY_NAME
 	string "Name of common binary file"
@@ -243,12 +259,24 @@ config COMMON_BINARY_NAME
 
 endif # SUPPORT_COMMON_BINARY
 
+if ARCH_USE_MMU
+
+config NUM_L2_PER_APP
+	int "Number of L2 page tables per app"
+	default 4
+	---help---
+		Set the number of L2 page tables required per app binary.
+		Memory required for this number of L2 page tables will be reserved by the system.
+		If the number of L2 page tables required during run time exceeds this value, then 
+		the behavior is UNDEFINED. 
+endif # ARCH_USE_MMU
+
 endif # APP_BINARY_SEPARATION
 
 
 config BUILD_PROTECTED
 	bool
-	depends on ARCH_USE_MPU
+	depends on ARCH_USE_MPU || ARCH_USE_MMU
 	select LIB_SYSCALL
 	select BUILD_2PASS
 
@@ -277,6 +305,25 @@ config BOARD_BUILD_DATE
 		It is included in binary header as binary version and binary manager uses it to check the latest binary.
 		So it should be set to a higer value than versions of old binaries if you want to make the binary the latest version.
 
+config BINARY_SIGNING
+	bool "Enable Binary Signing"
+	default n
+	depends on ARCH_BOARD_RTL8721CSM || ARCH_BOARD_RTL8720E || ARCH_BOARD_RTL8730E
+	---help---
+		Enable Encryption and Secure boot.
+		But this config is set as n and invisible because binary signing is not supported here.
+
+config USER_SIGN_PREPEND_SIZE
+	if ARCH_BOARD_RTL8721CSM
+		source board/rtl8721csm/Kconfig.signing
+	endif
+	if ARCH_BOARD_RTL8720E
+		source board/rtl8720e/Kconfig.signing
+	endif
+	if ARCH_BOARD_RTL8730E
+		source board/rtl8730e/Kconfig.signing
+	endif
+
 endmenu # Build Configuration
 
 menu "Binary Output Formats"
@@ -298,12 +345,12 @@ config MOTOROLA_SREC
 		and should not be selected if you are not using the GNU toolchain.
 
 config RAW_BINARY
-	bool "Raw binary format"
-	default n
+	bool
+	default y
 	---help---
-		Create the tinyara.bin in the raw binary format that is used with many
-		different loaders using the GNU objcopy program.  This option
-		should not be selected if you are not using the GNU toolchain.
+		Create the tinyara.bin in the raw binary format that is used with many 
+		different loaders using the GNU objcopy program. 
+		This configuration should always be enabled mandatorily in TizenRT.	
 
 menuconfig UBOOT_UIMAGE
 	bool "U-Boot uImage"
@@ -504,6 +551,10 @@ menu "Database"
 source "$FRAMEWORK_DIR/src/arastorage/Kconfig"
 endmenu
 
+menu "AI Framework"
+source "$FRAMEWORK_DIR/src/aifw/Kconfig"
+endmenu
+
 menu "AraUI Framework"
 source "$FRAMEWORK_DIR/src/araui/Kconfig"
 endmenu
@@ -543,7 +594,7 @@ menu "Binary Loader"
 source binfmt/Kconfig
 endmenu
 
-menu "Binary Compression"
+menu "Compression"
 source compression/Kconfig
 endmenu
 

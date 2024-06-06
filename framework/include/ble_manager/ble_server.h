@@ -44,7 +44,16 @@ typedef enum {
 	BLE_SERVER_ATTR_CB_WRITING,
 	BLE_SERVER_ATTR_CB_READING,
 	BLE_SERVER_ATTR_CB_WRITING_NO_RSP,
+	BLE_SERVER_ATTR_CB_CCCD,
+	BLE_SERVER_ATTR_CB_INDICATE,
 } ble_server_attr_cb_type_e;
+
+typedef enum {
+	BLE_SERVER_CCCD_DEFAULT 		= 0x0000,
+	BLE_SERVER_CCCD_NOTIFY  		= 0x0001,
+	BLE_SERVER_CCCD_INDICATE		= 0x0002,
+	BLE_SERVER_CCCD_NOTIFY_INDICATE	= 0x0003
+} ble_server_cccd_value_e;
 
 typedef void (*ble_server_cb_t)(ble_server_attr_cb_type_e type, ble_conn_handle con_handle, ble_attr_handle handle, void* arg);
 
@@ -102,9 +111,15 @@ typedef struct {
 } ble_server_gatt_t;
 
 typedef void (*ble_server_connected_t)(ble_conn_handle con_handle, ble_server_connection_type_e conn_type, uint8_t mac[BLE_BD_ADDR_MAX_LEN]);
+typedef void (*ble_server_disconnected_t)(ble_conn_handle con_handle, uint16_t cause);
+typedef void (*ble_server_mtu_update_t)(ble_conn_handle con_handle, uint16_t mtu_size);
+typedef void (*ble_server_oneshot_adv_t)(uint16_t adv_result);
 
 typedef struct {
 	ble_server_connected_t connected_cb;
+	ble_server_disconnected_t disconnected_cb;
+	ble_server_mtu_update_t mtu_update_cb;
+	ble_server_oneshot_adv_t oneshot_adv_cb;
 	// true : Secure Manager is enabled. Bondable.
 	// false : Secure Manager is disabled. Requesting Pairing will be rejected. Non-Bondable.
 	bool is_secured_connect_allowed; 
@@ -116,6 +131,9 @@ ble_result_e ble_server_get_profile_count(uint16_t *count);
 
 // API for sending a characteristic value notification to the selected target(s). (notify to all clients conn_handle (notify all = 0x99))
 ble_result_e ble_server_charact_notify(ble_attr_handle attr_handle, ble_conn_handle con_handle, ble_data *data);
+
+// API for sending a characteristic value indication to the selected target(s). (notify to all clients conn_handle (notify all = 0x99))
+ble_result_e ble_server_charact_indicate(ble_attr_handle attr_handle, ble_conn_handle con_handle, ble_data *data);
 
 // set data of attribute value
 ble_result_e ble_server_attr_set_data(ble_attr_handle attr_handle, ble_data *data);
@@ -144,6 +162,14 @@ The random delay is a pseudo-random value from 0ms to 10ms that is automatically
 This randomness helps reduce the possibility of collisions between advertisements of different devices
 */
 ble_result_e ble_server_set_adv_interval(unsigned int interval);
+
+/* Set tx power for advertising
+   Arguement txpower: 
+			0x00(-9dBm) ~ 0x31(15.5dBm) 
+			step : 0.5dBm
+			tested value: 0x06, 0x1A, 0x26
+*/
+ble_result_e ble_server_set_adv_tx_power(uint8_t txpower);
 
 ble_result_e ble_server_start_adv(void);
 ble_result_e ble_server_stop_adv(void);

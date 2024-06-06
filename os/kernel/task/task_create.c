@@ -193,11 +193,12 @@ static int thread_create(FAR const char *name, uint8_t ttype, int priority, int 
 		goto errout_with_tcb;
 	}
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	/* Update the pid information in stack node */
-	struct mm_allocnode_s *node;
-
-	node = (struct mm_allocnode_s *)(tcb->cmn.stack_alloc_ptr - SIZEOF_MM_ALLOCNODE);
-	node->pid = (-1) * (tcb->cmn.pid);
+	/* Exclude a stack node from heap usages of current thread.
+	 * This will be shown separately as stack usages.
+	 */
+	heapinfo_exclude_stacksize(tcb->cmn.stack_alloc_ptr);
+	/* Update the pid information to set a stack node */
+	heapinfo_set_stack_node(tcb->cmn.stack_alloc_ptr, tcb->cmn.pid);
 #endif
 
 	/* Setup to pass parameters to the new task */
@@ -288,6 +289,10 @@ errout:
 #ifndef CONFIG_BUILD_KERNEL
 int task_create(FAR const char *name, int priority, int stack_size, main_t entry, FAR char *const argv[])
 {
+#ifdef CONFIG_APP_BINARY_SEPARATION
+	ASSERT((sched_self()->flags & TCB_FLAG_TTYPE_MASK) != TCB_FLAG_TTYPE_KERNEL);
+#endif
+
 #if defined(CONFIG_BINARY_MANAGER) && defined(CONFIG_APP_BINARY_SEPARATION)
 	if (BM_PRIORITY_MIN - 1 < priority && priority < BM_PRIORITY_MAX + 1) {
 		sdbg("Invalid priority %d, it should be lower than %d or higher than %d\n", priority, BM_PRIORITY_MIN, BM_PRIORITY_MAX);

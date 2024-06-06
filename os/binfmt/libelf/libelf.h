@@ -336,55 +336,13 @@ int elf_loaddtors(FAR struct elf_loadinfo_s *loadinfo);
  *
  * Input Parameters:
  *   loadinfo - Load state information
- *   textsize - The size (in bytes) of the .text address environment needed
- *     for the ELF image (read/execute).
- *   datasize - The size (in bytes) of the .bss/.data address environment
- *     needed for the ELF image (read/write).
- *   heapsize - The initial size (in bytes) of the heap address environment
- *     needed by the task.  This region may be read/write only.
  *
  * Returned Value:
  *   Zero (OK) on success; a negated errno value on failure.
  *
  ****************************************************************************/
 
-int elf_addrenv_alloc(FAR struct elf_loadinfo_s *loadinfo, size_t textsize, size_t datasize, size_t heapsize);
-
-/****************************************************************************
- * Name: elf_addrenv_select
- *
- * Description:
- *   Temporarily select the task's address environment.
- *
- * Input Parameters:
- *   loadinfo - Load state information
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_ARCH_ADDRENV
-#define elf_addrenv_select(l) up_addrenv_select(&(l)->addrenv, &(l)->oldenv)
-#endif
-
-/****************************************************************************
- * Name: elf_addrenv_restore
- *
- * Description:
- *   Restore the address environment before elf_addrenv_select() was called..
- *
- * Input Parameters:
- *   loadinfo - Load state information
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_ARCH_ADDRENV
-#define elf_addrenv_restore(l) up_addrenv_restore(&(l)->oldenv)
-#endif
+int elf_addrenv_alloc(FAR struct elf_loadinfo_s *loadinfo);
 
 /****************************************************************************
  * Name: elf_addrenv_free
@@ -443,7 +401,7 @@ void elf_cache_uninit(void);
  *   OK (0) on Success
  *   ERROR (-1) on Failure
  ****************************************************************************/
-int elf_cache_init(int filfd, uint16_t offset, off_t filelen, uint8_t compression_type);
+int elf_cache_init(int filfd, uint16_t offset, off_t filelen);
 
 /****************************************************************************
  * Name: elf_cache_read
@@ -460,26 +418,12 @@ int elf_cache_init(int filfd, uint16_t offset, off_t filelen, uint8_t compressio
 int elf_cache_read(int filfd, uint16_t binary_header_size, FAR uint8_t *buffer, size_t readsize, off_t offset);
 #endif
 
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-struct bin_addr_info_s {
-	struct bin_addr_info_s *flink;
-	char bin_name[BIN_NAME_MAX];
-	uint32_t text_addr;
-#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-	uint32_t rodata_addr;
-	uint32_t data_addr;
-	uint32_t bss_addr;
-#endif
-};
-typedef struct bin_addr_info_s bin_addr_info_t;
-
-extern sq_queue_t g_bin_addr_list;
-
+#ifdef CONFIG_APP_BINARY_SEPARATION
 void elf_save_bin_section_addr(struct binary_s *bin);
-void elf_delete_bin_section_addr(struct binary_s *bin);
-#endif
+void elf_delete_bin_section_addr(uint8_t bin_idx);
 #ifdef CONFIG_BINFMT_SECTION_UNIFIED_MEMORY
 void *elf_find_start_section_addr(struct binary_s *binp);
 #endif
+#endif /* CONFIG_APP_BINARY_SEPARATION */
 
 #endif							/* __BINFMT_LIBELF_LIBELF_H */

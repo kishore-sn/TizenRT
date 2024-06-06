@@ -129,13 +129,6 @@ FAR void *mm_realloc(FAR struct mm_heap_s *heap, FAR void *oldmem, size_t size)
 #endif
 	}
 
-	/* If size is zero, then realloc is equivalent to free */
-
-	if (size < 1) {
-		mm_free(heap, oldmem);
-		return NULL;
-	}
-
 	if (size > MM_ALIGN_DOWN(MMSIZE_MAX) - SIZEOF_MM_ALLOCNODE) {
 		mdbg("Because of mm_allocnode, %u cannot be allocated. The maximum \
 			 allocable size is (MM_ALIGN_DOWN(MMSIZE_MAX) - SIZEOF_MM_ALLOCNODE) \
@@ -155,7 +148,7 @@ FAR void *mm_realloc(FAR struct mm_heap_s *heap, FAR void *oldmem, size_t size)
 
 	/* We need to hold the MM semaphore while we muck with the nodelist. */
 
-	mm_takesemaphore(heap);
+	DEBUGASSERT(mm_takesemaphore(heap));
 
 	/* Check if this is a request to reduce the size of the allocation. */
 

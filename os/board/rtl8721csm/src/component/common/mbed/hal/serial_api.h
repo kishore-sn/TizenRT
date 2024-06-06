@@ -26,6 +26,7 @@
 #ifndef MBED_SERIAL_API_H
 #define MBED_SERIAL_API_H
 
+#include <stdbool.h>
 #include "device.h"
 
 #ifdef __cplusplus
@@ -87,6 +88,8 @@ typedef struct serial_s serial_t;
   */
 void serial_init(serial_t *obj, PinName tx, PinName rx);
 
+void serial_pin_init(PinName tx, PinName rx);
+
 /**
   * @brief  Deinitializes the UART device, include clock/function/interrupt/UART registers.
   * @param  obj: uart object define in application software.
@@ -144,6 +147,16 @@ void serial_irq_handler(serial_t *obj, uart_irq_handler handler, uint32_t id);
 void serial_irq_set(serial_t *obj, SerialIrq irq, uint32_t enable);
 
 /**
+  * @brief  Enable/Disable UART loopback mode for testing.
+  * @param  obj: uart object define in application software.
+  * @param  enable/disable the loopback mode
+  * 		@arg 0 disable
+  *		@arg 1 enable
+  * @retval none
+  */
+void serial_control_loopback(serial_t *obj, bool enable);
+
+/**
   * @brief  get one byte from UART.
   * @param  obj: uart object define in application software.
   * @retval : received character
@@ -177,6 +190,14 @@ int  serial_readable(serial_t *obj);
 int  serial_writable(serial_t *obj);
 
 /**
+  * @brief  check if transmit fifo is empty
+  * @param  obj: uart object define in application software.
+  * @retval 1: TRUE
+  * @retval 0: FALSE
+  */
+int serial_tx_empty(serial_t *obj);
+
+/**
   * @brief  Clear Rx fifo.
   * @param  obj: uart object define in application software.
   * @retval none
@@ -184,14 +205,14 @@ int  serial_writable(serial_t *obj);
 void serial_clear(serial_t *obj);
 
 /**
-  * @brief  enable UART break contol function.
+  * @brief  enable UART break control function.
   * @param  obj: uart object define in application software.
   * @retval none
   */
 void serial_break_set(serial_t *obj);
 
 /**
-  * @brief  disable UART break contol function.
+  * @brief  disable UART break control function.
   * @param  obj: uart object define in application software.
   * @retval none
   */

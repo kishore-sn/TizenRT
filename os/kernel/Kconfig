@@ -193,6 +193,14 @@ config INIT_SYSTEM_TIME
 	---help---
 		Initialize the system time based on VERSION_BUILD_TIME.
 
+config INIT_SYSTEM_TIME_WITH_MIDNIGHT
+	bool "set system init time to midnight"
+	default n
+	depends on INIT_SYSTEM_TIME
+	---help---
+		When CONFIG_INIT_SYSTEM_TIME is enabled, this config allows to start
+		system time with midnight (0:0:0).
+
 if !RTC
 
 config START_YEAR
@@ -250,6 +258,17 @@ endmenu # Clocks and Timers
 
 menu "Tasks and Scheduling"
 
+config SPINLOCK
+	bool "Support Spinlocks"
+	default n
+	---help---
+		Enables support for spinlocks.  Spinlocks are used primarily for
+		synchronization in SMP configurations but are available for general
+		synchronization between CPUs.  Use in a single CPU configuration would
+		most likely be fatal.  Note, however, that this does not depend on
+		CONFIG_ARCH_HAVE_MULTICPU.  This permits the use of spinlocks in
+		other novel architectures.
+
 choice
 	prompt "Initialization Task"
 	default INIT_ENTRYPOINT if !BUILD_KERNEL
@@ -259,6 +278,58 @@ config INIT_ENTRYPOINT
 	depends on !BUILD_KERNEL
 
 endchoice # Initialization task
+
+config IRQCOUNT
+	bool
+	default n
+
+config SCHED_RESUMESCHEDULER
+	bool
+	default n
+
+config SMP
+	bool "Symmetric Multi-Processing (SMP)"
+	default n
+	depends on ARCH_HAVE_MULTICPU
+	depends on ARCH_HAVE_TESTSET
+	depends on ARCH_INTERRUPTSTACK != 0
+	select SPINLOCK
+	select SCHED_RESUMESCHEDULER
+	select IRQCOUNT
+	---help---
+		Enables support for Symmetric Multi-Processing (SMP) on a multi-CPU platform.
+		N.B. SMP mode requires the use of ARCH_INTERRUPTSTACK:
+		CPU0 thread0  ->  IRQ enter -> add thread0 to block_list -> IRQ leave(crash)
+                                                                        ||
+                                                                        /\
+                                                                       /  \
+		CPU1 thread1  ->  block_task -> take thread0 from block_list -> run thread0
+		CPU0 IRQ handler use the stack of thread0, but thread0 may switch to CPU1, that
+                will caused IRQ handler stack corruption.
+
+if SMP
+
+config CPU_GATING
+	bool "CPU Gating"
+	default n
+	---help---
+		This will register an additional Software Generated Interrupt (SGI) 
+		for CPU Gating when undergo flash operation.
+
+config SMP_NCPUS
+	int "Number of CPUs"
+	default 4
+	range 1 32
+	---help---
+		This value identifies the number of CPUs supported by the processor
+		that will be used for SMP.
+
+		If CONFIG_DEBUG_FEATURES is enabled, then the value one is permitted
+		for CONFIG_SMP_NCPUS.  This is not normally a valid setting for an
+		SMP configuration.  However, running the SMP logic in a single CPU
+		configuration is useful during certain testing.
+
+endif # SMP
 
 config RR_INTERVAL
 	int "Round robin timeslice (MSEC)"
@@ -966,7 +1037,6 @@ config IDLETHREAD_STACKSIZE
 config USERMAIN_STACKSIZE
 	int "Main thread stack size"
 	default 2048
-	depends on !BINARY_MANAGER
 	---help---
 		The size of the stack to allocate for the user initialization thread
 		that is started as soon as the OS completes its initialization.
@@ -990,3 +1060,50 @@ config PTHREAD_STACK_DEFAULT
 		Default pthread stack size
 endmenu # Stack size information
 
+config LOG_DUMP
+	bool "Enable log dump functionality"
+	select COMPRESSION
+	default n
+
+if LOG_DUMP
+
+config LOG_DUMP_PRIO
+	int "Log dump comrpess thread priority"
+	range 0 250
+	default 200
+
+config LOG_DUMP_CHUNK_SIZE
+	int "Log dump chunk size in bytes"
+	range 0 LOG_DUMP_MAX_SIZE
+	default 4096
+
+config LOG_DUMP_MAX_SIZE
+	int "Maximum size allocated for logs in bytes"
+	default 262144
+
+config LOG_DUMP_MEMCHECK_SIZE
+	int "Number of bytes written before checking the memory constraints"
+	default 1024
+
+config LOG_DUMP_MAX_FREE_HEAP
+	int "Maximum percent of memory occupied by logs compared to free heap"
+	default 20
+
+config LOG_DUMP_NUMBUFS
+	int "Number of buffers to reserve for log dump"
+	default 2
+
+config LOG_DUMP_DEBUG_DETECT_HANG
+	bool "Debug feature to detect hangs in log dump"
+	default n
+
+if LOG_DUMP_DEBUG_DETECT_HANG
+config LOG_DUMP_HANG_CHECK_SEC
+	int "Time in seconds to check for hangs by log_dump"
+	default 150
+	---help---
+	In order to check whether a device hang has occurred, it must be the
+	time that can be noticed before the h/w watchdog reboots or before 
+	an assert occurs due to a device hang.
+endif # LOG_DUMP_DEBUG_DETECT_HANG
+endif # LOG_DUMP

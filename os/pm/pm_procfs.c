@@ -74,6 +74,7 @@
 #include <tinyara/fs/fs.h>
 #include <tinyara/fs/procfs.h>
 #include <tinyara/fs/dirent.h>
+#include <tinyara/clock.h>
 
 #include <tinyara/pm/pm.h>
 
@@ -99,7 +100,6 @@
 struct power_dir_s {
 	struct procfs_dir_priv_s base;	/* Base directory private data */
 	uint8_t direntry;
-	int domain;					/* Domain of registered device driver for PM */
 };
 
 /* This structure describes one open "file" */
@@ -141,11 +141,7 @@ static size_t power_curstate_read(FAR struct file *filep, FAR char *buffer, size
 static size_t power_metrics_read(FAR struct file *filep, FAR char *buffer, size_t buflen);
 #endif
 static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_t buflen);
-static size_t power_lock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
-static size_t power_unlock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
-#ifdef CONFIG_PM_ENTER_SLEEP
-static size_t enter_sleep_write(FAR struct file *filep, FAR const char *buffer, size_t buflen);
-#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -159,11 +155,6 @@ static const struct power_procfs_entry_s g_power_direntry[] = {
 	{"metrics", power_metrics_read, NULL, DTYPE_FILE},
 #endif
 	{"devices", power_devices_read, NULL, DTYPE_FILE},
-	{"pm_lock", NULL, power_lock_write, DTYPE_FILE},
-	{"pm_unlock", NULL, power_unlock_write, DTYPE_FILE},
-#ifdef CONFIG_PM_ENTER_SLEEP
-	{"enter_sleep", NULL, enter_sleep_write, DTYPE_FILE},
-#endif
 };
 
 static const uint8_t g_power_direntrycount = sizeof(g_power_direntry) / sizeof(struct power_procfs_entry_s);
@@ -187,19 +178,19 @@ static const uint8_t g_power_statescount = sizeof(g_power_states) / sizeof(g_pow
  */
 
 const struct procfs_operations power_procfsoperations = {
-	power_open,					/* open */
+	power_open,				/* open */
 	power_close,				/* close */
-	power_read,					/* read */
-	power_write,					/* write */
+	power_read,				/* read */
+	power_write,				/* write */
 
-	power_dup,					/* dup */
+	power_dup,				/* dup */
 
 	power_opendir,				/* opendir */
 	power_closedir,				/* closedir */
 	power_readdir,				/* readdir */
 	power_rewinddir,			/* rewinddir */
 
-	power_stat					/* stat */
+	power_stat				/* stat */
 };
 
 /****************************************************************************
@@ -219,7 +210,6 @@ static int power_find_dirref(FAR const char *relpath, FAR struct power_dir_s *di
 {
 	uint16_t len;
 	FAR char *str;
-	int domain;
 	int i;
 
 	/* Skip the "power/domains" portion of relpath. We accept it only now */
@@ -244,7 +234,6 @@ static int power_find_dirref(FAR const char *relpath, FAR struct power_dir_s *di
 	}
 
 	str = NULL;
-	domain = strtoul(relpath, &str, 10);
 
 	if (!str) {
 		fdbg("ERROR: Invalid path \"%s\"\n", relpath);
@@ -252,15 +241,6 @@ static int power_find_dirref(FAR const char *relpath, FAR struct power_dir_s *di
 	}
 
 	len = str - relpath;
-
-	/* A valid domain would be in the range of 0-(CONFIG_PM_NDOMAINS-1) */
-	if (domain < 0 || domain >= CONFIG_PM_NDOMAINS) {
-		fdbg("ERROR: Invalid domain %ld\n", domain);
-		return -ENOENT;
-	}
-
-	/* Save the domain and skip it in the relpath */
-	dir->domain = domain;
 
 	relpath += len;
 
@@ -295,6 +275,7 @@ static int power_find_dirref(FAR const char *relpath, FAR struct power_dir_s *di
 /****************************************************************************
  * Name: power_states_read
  ****************************************************************************/
+
 static size_t power_states_read(FAR struct file *filep, FAR char *buffer, size_t buflen)
 {
 	FAR struct power_file_s *priv;
@@ -325,26 +306,17 @@ static size_t power_states_read(FAR struct file *filep, FAR char *buffer, size_t
 /****************************************************************************
  * Name: power_curstate_read
  ****************************************************************************/
+
 static size_t power_curstate_read(FAR struct file *filep, FAR char *buffer, size_t buflen)
 {
 	FAR struct power_file_s *priv;
-	FAR struct pm_domain_s *pdom;
 	size_t copysize;
-	int domain;
 
 	priv = (FAR struct power_file_s *)filep->f_priv;
 	copysize = 0;
 
 	if (priv->offset == 0) {
-		domain = priv->dir.domain;
-
-		if (domain >= 0 && domain < CONFIG_PM_NDOMAINS) {
-			pdom = &g_pmglobals.domain[domain];
-
-			if (pdom != NULL) {
-				copysize = snprintf(buffer, buflen, "%s", g_power_states[pdom->state]);
-			}
-		}
+		copysize = snprintf(buffer, buflen, "%s", g_power_states[g_pmglobals.state]);
 		/* Indicate we have already provided all the data */
 		priv->offset = 0xFF;
 	}
@@ -356,13 +328,13 @@ static size_t power_curstate_read(FAR struct file *filep, FAR char *buffer, size
 /****************************************************************************
  * Name: power_metrics_read
  ****************************************************************************/
+
 static size_t power_metrics_read(FAR struct file *filep, FAR char *buffer, size_t buflen)
 {
 	FAR struct power_file_s *priv;
 	struct pm_time_in_each_s mtrics;
 	size_t copysize;
 	size_t totalsize;
-	int domain;
 	int index;
 
 	priv = (FAR struct power_file_s *)filep->f_priv;
@@ -372,35 +344,33 @@ static size_t power_metrics_read(FAR struct file *filep, FAR char *buffer, size_
 	totalsize = 0;
 
 	if (priv->offset == 0) {
-		domain = priv->dir.domain;
 
-		if (domain >= 0 && domain < CONFIG_PM_NDOMAINS) {
-			pm_get_domainmetrics(domain, &mtrics);
+		pm_get_domainmetrics(&mtrics);
 
-			/* Time in NORMAL state */
-			copysize = snprintf(buffer, buflen, " Time in %s : %d\n", g_power_states[index++], mtrics.normal);
-			buflen -= copysize;
-			buffer += copysize;
-			totalsize += copysize;
+		/* Time in NORMAL state */
+		copysize = snprintf(buffer, buflen, " Time in %s : %d\n", g_power_states[index++], mtrics.normal);
+		buflen -= copysize;
+		buffer += copysize;
+		totalsize += copysize;
 
-			/* Time in IDLE state */
-			copysize = snprintf(buffer, buflen, " Time in %s : %d\n", g_power_states[index++], mtrics.idle);
-			buflen -= copysize;
-			buffer += copysize;
-			totalsize += copysize;
+		/* Time in IDLE state */
+		copysize = snprintf(buffer, buflen, " Time in %s : %d\n", g_power_states[index++], mtrics.idle);
+		buflen -= copysize;
+		buffer += copysize;
+		totalsize += copysize;
 
-			/* Time in STANDBY state */
-			copysize = snprintf(buffer, buflen, " Time in %s : %d\n", g_power_states[index++], mtrics.standby);
-			buflen -= copysize;
-			buffer += copysize;
-			totalsize += copysize;
+		/* Time in STANDBY state */
+		copysize = snprintf(buffer, buflen, " Time in %s : %d\n", g_power_states[index++], mtrics.standby);
+		buflen -= copysize;
+		buffer += copysize;
+		totalsize += copysize;
 
-			/* Time in SLEEP state */
-			copysize = snprintf(buffer, buflen, " Time in %s : %d", g_power_states[index], mtrics.sleep);
-			buflen -= copysize;
-			buffer += copysize;
-			totalsize += copysize;
-		}
+		/* Time in SLEEP state */
+		copysize = snprintf(buffer, buflen, " Time in %s : %d", g_power_states[index], mtrics.sleep);
+		buflen -= copysize;
+		buffer += copysize;
+		totalsize += copysize;
+
 		/* Indicate we have already provided all the data */
 		priv->offset = 0xFF;
 	}
@@ -411,6 +381,7 @@ static size_t power_metrics_read(FAR struct file *filep, FAR char *buffer, size_
 /****************************************************************************
  * Name: power_devices_read
  ****************************************************************************/
+
 static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_t buflen)
 {
 	FAR struct power_file_s *priv;
@@ -418,25 +389,21 @@ static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_
 	FAR dq_entry_t *entry;
 	size_t copysize;
 	size_t totalsize;
-	int domain;
 
 	priv = (FAR struct power_file_s *)filep->f_priv;
 	copysize = 0;
 	totalsize = 0;
 
 	if (priv->offset == 0) {
-		domain = priv->dir.domain;
 
-		if (domain >= 0 && domain < CONFIG_PM_NDOMAINS) {
-			entry = dq_peek(&g_pmglobals.registry);
-			while (entry) {
-				callback = (FAR struct pm_callback_s *)entry;
-				copysize = snprintf(buffer, buflen, "%s ", callback->name);
-				buflen -= copysize;
-				buffer += copysize;
-				totalsize += copysize;
-				entry = sq_next(entry);
-			}
+		entry = dq_peek(&g_pmglobals.registry);
+		while (entry) {
+			callback = (FAR struct pm_callback_s *)entry;
+			copysize = snprintf(buffer, buflen, "%s ", callback->name);
+			buflen -= copysize;
+			buffer += copysize;
+			totalsize += copysize;
+			entry = sq_next(entry);
 		}
 
 		/* Indicate we have already provided all the data */
@@ -446,65 +413,6 @@ static size_t power_devices_read(FAR struct file *filep, FAR char *buffer, size_
 	return totalsize;
 }
 
-/****************************************************************************
- * Name: power_lock_write
- ****************************************************************************/
-static size_t power_lock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
-{
-	int state = atoi(buffer);
-
-	if (state >= PM_NORMAL && state < PM_SLEEP) {
-		pm_stay(0, state);
-		fvdbg("power locked!\n");
-	} else {
-		fdbg("ERROR: Invalid state passed \n");
-	}
-
-	return buflen;
-}
-
-/****************************************************************************
- * Name: power_unlock_write
- ****************************************************************************/
-static size_t power_unlock_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
-{
-	int state = atoi(buffer);
-
-	if (state >= PM_NORMAL && state < PM_SLEEP) {
-		pm_relax(0, state);
-		fvdbg("power unlocked!\n");
-	} else {
-		fdbg("ERROR: Invalid state passed \n");
-	}
-
-	return buflen;
-}
-
-/****************************************************************************
- * Name: enter_sleep_write
- ****************************************************************************/
- #ifdef CONFIG_PM_ENTER_SLEEP
-static size_t enter_sleep_write(FAR struct file *filep, FAR const char *buffer, size_t buflen)
-{
-	int len;
-	int ret;
-	char *p;
-
-	p = memchr(buffer, '\n', buflen);
-	len = p ? p - buffer : buflen;
-
-	if (len == 5 && !strncmp(buffer, "sleep", len)) {
-		ret = up_pmsleep();
-		if (ret == -EAGAIN) {
-			fdbg("ERROR: PM state locked, try later:%d\n", ret);
-		} else if (ret < 0) {
-			fdbg("ERROR: Some of the drivers refused the state change:%d\n", ret);
-		}
-	}
-
-	return buflen;
-}
-#endif
 /****************************************************************************
  * Name: power_open
  ****************************************************************************/
@@ -623,6 +531,7 @@ static ssize_t power_write(FAR struct file *filep, FAR const char *buffer, size_
 
 	return ret;
 }
+
 /****************************************************************************
  * Name: power_dup
  *
@@ -630,6 +539,7 @@ static ssize_t power_write(FAR struct file *filep, FAR const char *buffer, size_
  *   Duplicate open file data in the new file structure.
  *
  ****************************************************************************/
+
 static int power_dup(FAR const struct file *oldp, FAR struct file *newp)
 {
 	FAR struct power_file_s *oldfile;
@@ -667,6 +577,7 @@ static int power_dup(FAR const struct file *oldp, FAR struct file *newp)
  *   Open a directory for read access
  *
  ****************************************************************************/
+
 static int power_opendir(FAR const char *relpath, FAR struct fs_dirent_s *dir)
 {
 	FAR struct power_dir_s *powerdir;
@@ -825,3 +736,4 @@ static int power_stat(const char *relpath, struct stat *buf)
 }
 #endif							/* !CONFIG_DISABLE_MOUNTPOINT && CONFIG_FS_PROCFS */
 #endif							/* CONFIG_PM && !CONFIG_FS_PROCFS_EXCLUDE_POWER */
+

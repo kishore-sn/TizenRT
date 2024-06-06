@@ -31,15 +31,6 @@ LDLIBS += $(LIBGCC)
 
 OBJCOPY = $(CROSSDEV)objcopy
 
-ifeq ($(CONFIG_COMPRESSED_BINARY),y)
-COMPRESSION_TYPE = $(CONFIG_COMPRESSION_TYPE)
-BLOCK_SIZE = $(CONFIG_COMPRESSION_BLOCK_SIZE)
-else
-COMPRESSION_TYPE = 0
-BLOCK_SIZE = 0
-endif
-
-BOARDNAME=$(CONFIG_ARCH_BOARD)
 APPDEFINE = ${shell $(TOPDIR)/tools/define.sh "$(CC)" __APP_BUILD__}
 
 SRCS += $(USERSPACE).c
@@ -50,50 +41,34 @@ prebuild:
 	$(call DELFILE, $(USERSPACE)$(OBJEXT))
 
 all: prebuild $(BIN)
-.PHONY: prebuild clean install verify
+.PHONY: prebuild clean install
 
 $(OBJS): %$(OBJEXT): %.c
 	@echo "CC: $<"
 	$(Q) $(CC) $(APPDEFINE) -c $(CELFFLAGS) $< -o $@
 
+ifeq ($(CONFIG_ELF),y)
 $(BIN): $(OBJS)
 	@echo "LD: $<"
 ifeq ($(CONFIG_SUPPORT_COMMON_BINARY),y)
 	$(Q) $(LD) $(LDELFFLAGS) -o $@ $(ARCHCRT0OBJ) $^ --start-group $(LIBGCC) --end-group
 	$(Q) $(NM) -u $(BIN) | awk -F"U " '{print "--require-defined "$$2}' >> $(USER_BIN_DIR)/lib_symbols.txt
 else
-	$(Q) $(LD) $(LDELFFLAGS) $(LDLIBPATH) -o $@ $(ARCHCRT0OBJ) $^ --start-group $(LDLIBS) --end-group
+	$(Q) $(LD) $(LDELFFLAGS) $(LDLIBPATH) -o $@ $(ARCHCRT0OBJ) $^ --start-group $(LDLIBS) $(LIBSUPXX) --end-group
+endif
+endif
+
+ifeq ($(CONFIG_XIP_ELF),y)
+$(BIN): $(OBJS)
+	$(Q) $(LD) -T $(USER_BIN_DIR)/$@_0.ld -T $(TOPDIR)/../build/configs/$(CONFIG_ARCH_BOARD)/scripts/xipelf/userspace_all.ld -e main -o $@ $(ARCHCRT0OBJ) $^ --start-group $(LIBGCC) $(LIBSUPXX) --end-group -R $(USER_BIN_DIR)/$(CONFIG_COMMON_BINARY_NAME)
 endif
 
 clean:
 	$(call DELFILE, $(BIN))
 	$(call DELFILE, $(USER_BIN_DIR)/$(BIN))
-	$(call DELFILE, $(TOPDIR)/../tools/fs/contents-smartfs/$(BOARDNAME)/base-files/bins/$(BIN)_$(BIN_VER))
 	$(call CLEAN)
 
 distclean: clean
 
 install:
-	$(Q) mkdir -p $(USER_BIN_DIR)
 	$(Q) install $(BIN) $(USER_BIN_DIR)/$(BIN)
-ifeq ($(CONFIG_ELF_EXCLUDE_SYMBOLS),y)
-	$(Q) cp $(USER_BIN_DIR)/$(BIN) $(USER_BIN_DIR)/$(BIN)_dbg
-	$(Q) $(OBJCOPY) --remove-section .comment $(USER_BIN_DIR)/$(BIN)
-	$(Q) $(STRIP) -g $(USER_BIN_DIR)/$(BIN) -o $(USER_BIN_DIR)/$(BIN)
-endif
-	$(Q) $(TOPDIR)/tools/mkbinheader.py $(USER_BIN_DIR)/$(BIN) user $(BIN_TYPE) $(KERNEL_VER) $(BIN) $(BIN_VER) $(DYNAMIC_RAM_SIZE) $(STACKSIZE) $(PRIORITY) $(COMPRESSION_TYPE) $(BLOCK_SIZE) $(LOADING_PRIORITY)
-	$(Q) $(TOPDIR)/tools/mkchecksum.py $(USER_BIN_DIR)/$(BIN)
-	$(Q) mkdir -p $(TOPDIR)/../tools/fs/contents-smartfs/$(BOARDNAME)/base-files/bins
-	$(Q) cp $(USER_BIN_DIR)/$(BIN) $(TOPDIR)/../tools/fs/contents-smartfs/$(BOARDNAME)/base-files/bins/$(BIN)_$(BIN_VER)
-
-verify:
-# If we support common binary, then the symbols in the common binary will appear as UNDEFINED
-# in the application binary. So, verification is required only when we dont support common binary.
-ifneq ($(CONFIG_SUPPORT_COMMON_BINARY),y)
-	$(Q) if [ "`nm -u $(BIN) | wc -l`" != "0" ]; then \
-		echo "Undefined Symbols"; \
-		nm -u -l $(BIN); \
-		rm $(BIN); \
-		exit 1; \
-	fi
-endif

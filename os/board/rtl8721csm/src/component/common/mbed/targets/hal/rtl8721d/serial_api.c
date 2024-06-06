@@ -19,6 +19,7 @@
 #include "serial_ex_api.h"
 #include "pinmap.h"
 #include <string.h>
+#include <stdbool.h>
 
 /** @addtogroup AmebaD_Mbed_API 
   * @{
@@ -489,7 +490,6 @@ void serial_init(serial_t *obj, PinName tx, PinName rx)
 
 	UART_StructInit(&puart_adapter->UART_InitStruct);
 	UART_Init(puart_adapter->UARTx, &puart_adapter->UART_InitStruct);
-
 	InterruptRegister((IRQ_FUN)uart_irqhandler, puart_adapter->IrqNum, (u32)puart_adapter, 5);
 	InterruptEn(puart_adapter->IrqNum, 5);
 
@@ -500,6 +500,14 @@ void serial_init(serial_t *obj, PinName tx, PinName rx)
 		memcpy(&stdio_uart, obj, sizeof(serial_t));
 	}
 #endif
+}
+
+void serial_pin_init(PinName tx, PinName rx) 
+{
+	pinmap_pinout(tx, PinMap_UART_TX);
+	pinmap_pinout(rx, PinMap_UART_RX);
+	pin_mode(tx, PullUp);
+	pin_mode(rx, PullUp);
 }
 
 /**
@@ -685,6 +693,23 @@ void serial_irq_set(serial_t *obj, SerialIrq irq, uint32_t enable)
 }
 
 /**
+  * @brief  Enable/Disable UART loopback mode.
+  * @param  obj: uart object define in application software.
+  * @param  enable: enable/disable the loopback mode
+  *             @arg 0 disable
+  *             @arg 1 enable
+  * @retval none
+  */
+void serial_control_loopback(serial_t *obj, bool enable)
+{
+	UART_TypeDef* UARTx = UART_DEV_TABLE[obj->uart_idx].UARTx;
+	if (enable) {
+		UARTx->MCR |= BIT(4);
+	} else {
+		UARTx->MCR &= ~BIT(4);
+	}
+}
+/**
   * @brief  get one byte from UART.
   * @param  obj: uart object define in application software.
   * @retval : received character
@@ -695,7 +720,6 @@ int serial_getc(serial_t *obj)
 	PMBED_UART_ADAPTER puart_adapter=&(uart_adapter[obj->uart_idx]);
 	u8 RxByte = 0;
 
-	while (!serial_readable(obj));
 	UART_CharGet(puart_adapter->UARTx, &RxByte);
 
 	return (int)RxByte;
@@ -712,7 +736,6 @@ void serial_putc(serial_t *obj, int c)
 {
 	PMBED_UART_ADAPTER puart_adapter=&(uart_adapter[obj->uart_idx]);
 
-	while (!serial_writable(obj));
 	UART_CharPut(puart_adapter->UARTx, (c & 0xFF));
 
 	if (serial_irq_en[obj->uart_idx] & SERIAL_TX_IRQ_EN) {
@@ -758,6 +781,24 @@ int serial_writable(serial_t *obj)
 }
 
 /**
+  * @brief  check if transmit fifo is empty
+  * @param  obj: uart object define in application software.
+  * @retval status value:
+  *          - 1: TRUE
+  *          - 0: FALSE   
+  */
+int serial_tx_empty(serial_t *obj)
+{
+	PMBED_UART_ADAPTER puart_adapter=&(uart_adapter[obj->uart_idx]);
+
+	if (puart_adapter->UARTx->LSR & RUART_LINE_STATUS_REG_TEMT) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+/**
   * @brief  Clear Rx fifo.
   * @param  obj: uart object define in application software.
   * @retval none
@@ -782,7 +823,7 @@ void serial_pinout_tx(PinName tx)
 }
 
 /**
-  * @brief  enable UART break contol function.
+  * @brief  enable UART break control function.
   * @param  obj: uart object define in application software.
   * @retval none
   */
@@ -794,7 +835,7 @@ void serial_break_set(serial_t *obj)
 }
 
 /**
-  * @brief  disable UART break contol function.
+  * @brief  disable UART break control function.
   * @param  obj: uart object define in application software.
   * @retval none
   */
@@ -1212,7 +1253,6 @@ int32_t serial_send_blocked (serial_t *obj, char *ptxbuf, uint32_t len, uint32_t
 
 	obj->tx_len = len;
 	while (1) {
-		while (!serial_writable(obj));
 		UART_CharPut(UARTx, *ptxbuf);
 
 		ptxbuf++;

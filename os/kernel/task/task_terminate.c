@@ -158,44 +158,97 @@
 int task_terminate(pid_t pid, bool nonblocking)
 {
 	FAR struct tcb_s *dtcb;
-	irqstate_t saved_state;
+	FAR dq_queue_t *tasklist;
+	irqstate_t flags;
+#ifdef CONFIG_SMP
+	int cpu;
+#endif
+	/* Find for the TCB associated with matching PID */
+
+	dtcb = sched_gettcb(pid);
+	if (!dtcb) {
+		/* This PID does not correspond to any known task */
+		return -ESRCH;
+	}
+
 	trace_begin(TTRACE_TAG_TASK, "task_terminate");
 
 	/* Make sure the task does not become ready-to-run while we are futzing with
 	 * its TCB by locking ourselves as the executing task.
 	 */
 
-	sched_lock();
-
-	/* Find for the TCB associated with matching PID */
-
-	dtcb = sched_gettcb(pid);
-	if (!dtcb) {
-		/* This PID does not correspond to any known task */
-
-		sched_unlock();
-		trace_end(TTRACE_TAG_TASK);
-		return -ESRCH;
-	}
+	flags = enter_critical_section();
 
 	/* Verify our internal sanity */
 
-	if (dtcb->task_state == TSTATE_TASK_RUNNING || dtcb->task_state >= NUM_TASK_STATES) {
-		sched_unlock();
-		PANIC();
-	}
-
-#if defined(CONFIG_APP_BINARY_SEPARATION) && defined(CONFIG_ARM_MPU)
-	/* Disable mpu regions when the binary is unloaded if its own mpu registers are set in mpu h/w. */
-	if (IS_BINARY_MAINTASK(dtcb) && up_mpu_check_active(&dtcb->mpu_regs[0])) {
-#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-		for (int i = 0; i < MPU_REG_NUMBER * MPU_NUM_REGIONS; i += MPU_REG_NUMBER) {
-			up_mpu_disable_region(&dtcb->mpu_regs[i]);
-		}
+#ifdef CONFIG_SMP
+	DEBUGASSERT(dtcb->task_state < NUM_TASK_STATES);
 #else
-		up_mpu_disable_region(&dtcb->mpu_regs[0]);
+	DEBUGASSERT(dtcb->task_state != TSTATE_TASK_RUNNING &&
+	            dtcb->task_state < NUM_TASK_STATES);
+#endif
+
+#ifdef CONFIG_SMP
+	/* In the SMP case, the thread may be running on another CPU.  If that is
+	 * the case, then we will pause the CPU that the thread is running on.
+	 */
+
+	cpu = sched_pause_cpu(dtcb);
+
+	/* Get the task list associated with the thread's state and CPU */
+
+	tasklist = TLIST_HEAD(dtcb->task_state, cpu);
+#else
+	/* In the non-SMP case, we can be assured that the task to be terminated
+	 * is not running.  get the task list associated with the task state.
+	 */
+
+	tasklist = TLIST_HEAD(dtcb->task_state);
+#endif
+
+	/* Remove the task from the task list */
+
+	dq_rem((FAR dq_entry_t *)dtcb, tasklist);
+
+	/* At this point, the TCB should no longer be accessible to the system */
+
+#ifdef CONFIG_SMP
+	/* Resume the paused CPU (if any) */
+
+	if (cpu >= 0) {
+		//TODO: We are not yet sure about how to handle a failure here
+		DEBUGVERIFY(up_cpu_resume(cpu));
+	}
+#endif
+
+	leave_critical_section(flags);
+
+#if defined(CONFIG_APP_BINARY_SEPARATION)
+	/* Disable mpu regions when the binary is unloaded if its own mpu registers are set in mpu h/w. */
+	if (IS_BINARY_MAINTASK(dtcb)) {
+#if defined(CONFIG_ARM_MPU)
+		if (up_mpu_check_active(&dtcb->mpu_regs[0])) {
+#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
+			for (int i = 0; i < MPU_REG_NUMBER * NUM_APP_REGIONS; i += MPU_REG_NUMBER) {
+				up_mpu_disable_region(&dtcb->mpu_regs[i]);
+			}
+#else
+			up_mpu_disable_region(&dtcb->mpu_regs[0]);
+#endif
+		}
+#elif defined(CONFIG_ARCH_USE_MMU)
+		mmu_clear_app_pgtbl(dtcb->app_id);
 #endif
 	}
+#endif
+
+
+#ifdef CONFIG_TASK_MONITOR
+	/* Unregister this pid from task monitor */
+	task_monitor_unregester_list(pid);
+#endif
+#ifdef CONFIG_PREFERENCE
+	preference_clear_callbacks(pid);
 #endif
 
 	/* Perform common task termination logic (flushing streams, calling
@@ -211,23 +264,12 @@ int task_terminate(pid_t pid, bool nonblocking)
 
 	task_exithook(dtcb, EXIT_SUCCESS, nonblocking);
 
-	/* Remove the task from the OS's tasks lists. */
-
-	saved_state = irqsave();
-	dq_rem((FAR dq_entry_t *)dtcb, (dq_queue_t *)g_tasklisttable[dtcb->task_state].list);
+	/* Clean up in the above exithook function is dependent upon the task
+	 * state during the exit (task can be blocked on mq and a differnt task
+	 * could have killed it). As a result, we need to retain the task_state
+	 * in tcb until exithook is done
+	 */
 	dtcb->task_state = TSTATE_TASK_INVALID;
-#ifdef CONFIG_TASK_MONITOR
-	/* Unregister this pid from task monitor */
-	task_monitor_unregester_list(pid);
-#endif
-#ifdef CONFIG_PREFERENCE
-	preference_clear_callbacks(pid);
-#endif
-	irqrestore(saved_state);
-
-	/* At this point, the TCB should no longer be accessible to the system */
-
-	sched_unlock();
 
 	trace_end(TTRACE_TAG_TASK);
 

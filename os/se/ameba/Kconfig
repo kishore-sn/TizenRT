@@ -38,6 +38,12 @@ config HW_RSA_ENC
 	---help---
 		Encrypts a data based on hardware.
 
+config HW_AES_ENC
+	bool "HW aes encryption decryption"
+	default n
+	---help---
+		Encrypts a data based on hardware.
+
 config HW_SE_STORAGE
 	bool "Secure Storage Support"
 	default n
@@ -46,7 +52,7 @@ config HW_SE_STORAGE
 
 config SE_SECURE_CONTEXT_SIZE
 	int "Secure Context Size"
-	default 6144
+	default 6144 if AMEBAD_TRUSTZONE
+	default 9216 if AMEBALITE_TRUSTZONE
 	---help---
 		Secure Context Size to be allocated for SE NSC
-

@@ -414,7 +414,7 @@ int8_t cmd_wifi_ap(trwifi_softap_config_s *softap_config)
 	return ret;
 }
 
-int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg)
+int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg, uint32_t ap_channel)
 {
 	int ret;
 
@@ -426,6 +426,7 @@ int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg)
 	int key_id = 0;
 	void *semaphore;
 	int security_retry_count = 0;
+	uint8_t pscan_config;
 
 	trwifi_ap_auth_type_e auth = ap_connect_config->ap_auth_type;
 	ssid = ap_connect_config->ssid;
@@ -450,6 +451,9 @@ int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg)
 		break;
 	case TRWIFI_AUTH_WPA2_PSK:
 		security_type = RTW_SECURITY_WPA2_AES_PSK;
+		if (wifi_set_wpa_mode(WPA2_ONLY_MODE) != 0) {
+			RTW_API_INFO("\n\rFailed to set wpa mode!\r\n");
+		}
 		password = ap_connect_config->passphrase;
 		ssid_len = strlen((const char *)ssid);
 		password_len = ap_connect_config->passphrase_length;
@@ -457,6 +461,9 @@ int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg)
 		break;
 	case TRWIFI_AUTH_WPA3_PSK:
 		security_type = RTW_SECURITY_WPA3_AES_PSK;
+		if (wifi_set_wpa_mode(WPA3_ONLY_MODE) != 0) {
+			RTW_API_INFO("\n\rFailed to set wpa mode!\r\n");
+		}
 		password = ap_connect_config->passphrase;
 		ssid_len = strlen((const char *)ssid);
 		password_len = ap_connect_config->passphrase_length;
@@ -467,6 +474,9 @@ int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg)
 			security_type = RTW_SECURITY_WPA_AES_PSK;
 		} else {
 			security_type = RTW_SECURITY_WPA_TKIP_PSK;
+		}
+		if (wifi_set_wpa_mode(WPA_ONLY_MODE) != 0) {
+			RTW_API_INFO("\n\rFailed to set wpa mode!\r\n");
 		}
 		password = ap_connect_config->passphrase;
 		ssid_len = strlen((const char *)ssid);
@@ -495,6 +505,15 @@ int8_t cmd_wifi_connect(trwifi_ap_config_s *ap_connect_config, void *arg)
 	if (wifi_on(RTW_MODE_STA) < 0) {
 		ndbg("\n\rERROR: Wifi on failed!");
 		return -1;
+	}
+
+	if ((ap_channel >= 1) && (ap_channel <= 13)) {
+		pscan_config = PSCAN_ENABLE | PSCAN_FAST_SURVEY;
+		ret = wifi_set_pscan_chan((uint8_t *)&ap_channel, &pscan_config, 1);
+
+		if (ret < 0) {
+			RTW_API_INFO("\n\rset pscan failed");
+		}
 	}
 
 	ret = wifi_connect(ssid,
@@ -922,12 +941,12 @@ void cmd_wifi_scan(int argc, char **argv)
 		int i = 0;
 		int num_channel = atoi(argv[1]);
 
-		channel_list = (u8 *)kmm_zalloc(num_channel);
+		channel_list = (u8 *)rtw_zmalloc(num_channel);
 		if (!channel_list) {
 			ndbg("\n\r ERROR: Can't malloc memory for channel list");
 			goto exit;
 		}
-		pscan_config = (u8 *)kmm_zalloc(num_channel);
+		pscan_config = (u8 *)rtw_zmalloc(num_channel);
 		if (!pscan_config) {
 			ndbg("\n\r ERROR: Can't malloc memory for pscan_config");
 			goto exit;
@@ -950,9 +969,9 @@ void cmd_wifi_scan(int argc, char **argv)
 	}
 exit:
 	if (argc > 2 && channel_list)
-		kmm_free(channel_list);
+		rtw_free(channel_list);
 	if (argc > 2 && pscan_config)
-		kmm_free(pscan_config);
+		rtw_free(pscan_config);
 }
 
 #if CONFIG_WEBSERVER

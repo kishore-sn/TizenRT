@@ -24,9 +24,11 @@ TOPDIR="${OSDIR}/.."
 BUILDDIR="${TOPDIR}/build"
 BINDIR="${BUILDDIR}/output/bin"
 CONFIGDIR="${BUILDDIR}/configs"
-DOCKER_VERSION="1.5.5"
+DOCKER_IMAGE=
+DOCKER_PUBLIC_IMAGE="tizenrt/tizenrt"
+DOCKER_VERSION="1.5.8"
 
-STATUS_LIST="NOT_CONFIGURED BOARD_CONFIGURED CONFIGURED BUILT PREPARE_DL DOWNLOAD"
+STATUS_LIST="NOT_CONFIGURED BOARD_CONFIGURED CONFIGURED BUILT PREPARE_DL DOWNLOAD_READY"
 BUILD_CMD=make
 
 # Checking docker is installed
@@ -45,6 +47,46 @@ if ! which docker > /dev/null; then
 	nodocker 1>&2
 	exit 1
 fi
+
+# check docker image and pull docker image
+function GET_SPECIFIC_DOCKER_IMAGE()
+{
+
+	unset CONFIG_DOCKER_VERSION
+	# check existing docker image for specified version
+	if [  -f ${CONFIGFILE} ]; then
+		source ${CONFIGFILE}
+		if [ -n "$CONFIG_DOCKER_VERSION" ]; then
+			DOCKER_VERSION=${CONFIG_DOCKER_VERSION}
+		fi
+	fi
+	echo "Check Docker Image"
+	DOCKER_IMAGES=`docker images | grep 'tizenrt' | awk '{print $1":"$2}'`
+	for im in ${DOCKER_IMAGES}; do
+		# check public image first
+		if [ "$im" == "$DOCKER_PUBLIC_IMAGE:$DOCKER_VERSION" ]; then
+			DOCKER_IMAGE=$DOCKER_PUBLIC_IMAGE
+			DOCKER_IMAGE_EXIST="true"
+			break
+		fi
+		# Can add other docker image
+	done
+
+	# pull the docker image with specified version
+	if [ "$DOCKER_IMAGE_EXIST" != "true" ]; then
+		# try to get public image first
+		docker pull ${DOCKER_PUBLIC_IMAGE}:${DOCKER_VERSION}
+		if [ $? -eq 0 ]; then
+			echo "success to pull docker image: ${DOCKER_PUBLIC_IMAGE}:${DOCKER_VERSION}"
+			DOCKER_IMAGE=$DOCKER_PUBLIC_IMAGE
+			return
+		fi
+		echo "failed to pull docker image: ${DOCKER_PUBLIC_IMAGE}:${DOCKER_VERSION}"
+		# Can add other docker image
+		exit 1
+	fi
+}
+
 
 # Board Specific output files
 #
@@ -65,23 +107,32 @@ function FIND_BINFILE()
 		EXTNAME=""
 	fi
 
-	if [[ "${CONFIG_ARCH_BOARD}" == "esp32"* ]]; then
-		BINFILE="${BINDIR}/tinyara.elf${EXTNAME}"
-	elif [[ "${CONFIG_ARCH_BOARD}" == "imxrt"* ]]; then
-		# This must be same as imxrt10x0-evk_download.sh in build/configs/imxrt
-		if [[ "${CONFIG_APP_BINARY_SEPARATION}" == "y" ]]; then
-			BINFILE="${BINDIR}/wifi"
+	if [ -f ${OSDIR}/.bininfo ]; then
+		source ${OSDIR}/.bininfo
+		BINFILE="${BINDIR}/${KERNEL_BIN_NAME}"
+	else
+		if [[ "${CONFIG_ARCH_BOARD}" == "esp32"* ]]; then
+			BINFILE="${BINDIR}/tinyara.elf${EXTNAME}"
+		elif [[ "${CONFIG_ARCH_BOARD}" == "imxrt"* ]]; then
+			# This must be same as imxrt10x0-evk_download.sh in build/configs/imxrt
+			if [[ "${CONFIG_APP_BINARY_SEPARATION}" == "y" ]]; then
+				BINFILE="${BINDIR}/wifi"
+			else
+				BINFILE="${BINDIR}/tinyara${EXTNAME}"
+			fi
+		elif [[ "${CONFIG_ARCH_BOARD}" == "artik05x" ]]; then
+			BINFILE="${BINDIR}/tinyara_head${EXTNAME}"
+		elif [[ "${CONFIG_ARCH_BOARD}" == "cy4390x" ]]; then
+			BINFILE="${BINDIR}/tinyara_master_strip"
+		elif [[ "${CONFIG_ARCH_BOARD}" == "rtl8721csm" ]]; then
+			BINFILE="${BINDIR}/${KERNEL_BIN_NAME}"
+		elif [[ "${CONFIG_ARCH_BOARD}" == "rtl8720e" ]]; then
+			BINFILE="${BINDIR}/${KERNEL_BIN_NAME}"
+		elif [[ "${CONFIG_ARCH_BOARD}" == "rtl8730e" ]]; then
+			BINFILE="${BINDIR}/${KERNEL_BIN_NAME}"
 		else
 			BINFILE="${BINDIR}/tinyara${EXTNAME}"
 		fi
-	elif [[ "${CONFIG_ARCH_BOARD}" == "artik05x" ]]; then
-		BINFILE="${BINDIR}/tinyara_head${EXTNAME}"
-	elif [[ "${CONFIG_ARCH_BOARD}" == "cy4390x" ]]; then
-		BINFILE="${BINDIR}/tinyara_master_strip"
-	elif [[ "${CONFIG_ARCH_BOARD}" == "rtl8721csm" ]]; then
-		BINFILE="${BINDIR}/km0_km4_image2${EXTNAME}"
-	else
-		BINFILE="${BINDIR}/tinyara${EXTNAME}"
 	fi
 }
 
@@ -96,11 +147,11 @@ function SELECT_OPTION()
 			echo ======================================================
 			echo "  \"Select build Option\""
 			echo ======================================================
-			echo "  \"1. Build with Current Configurations\""
+			echo "  \"1. Build with Current Configuration\""
 			echo "  \"2. Re-configure\""
-			echo "  \"3. Menuconfig\""
-			echo "  \"4. Build Clean\""
-			echo "  \"5. Build Dist-Clean\""
+			echo "  \"3. Modify Current Configuration\""
+			echo "  \"4. Clean Build\""
+			echo "  \"5. Clean Build and Re-Configure\""
 			echo "  \"6. Build SmartFS Image\""
 			if [ "${STATUS}" == "BUILT" ]; then
 				echo "  \"d. Download\""
@@ -159,9 +210,9 @@ function SELECT_OPTION()
 
 function BUILD_TEST()
 {
-	# excute a shell script for build test
+	# execute a shell script for build test
 	pushd ${OSDIR} > /dev/null
-	docker run --rm ${DOCKER_OPT} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${DOCKER_VERSION} bash -c "./tools/build_test.sh"
+	docker run --rm ${DOCKER_OPT} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged ${DOCKER_IMAGE}:${DOCKER_VERSION} bash -c "./tools/build_test.sh"
 	popd > /dev/null
 }
 
@@ -211,23 +262,23 @@ function SELECT_BOARD()
 		read SELECTED_BOARD
 	fi
 
-	# treate "test"
+	# treat "test"
 	if [ "${SELECTED_BOARD}" == "t" -o "${SELECTED_BOARD}" == "test" -o "${SELECTED_BOARD}" == "TEST" ]; then
 		BUILD_TEST
 		exit 1
 	fi
 
-	# treate "exit"
+	# treat "exit"
 	if [ "${SELECTED_BOARD}" == "x" -o "${SELECTED_BOARD}" == "exit" -o "${SELECTED_BOARD}" == "EXIT" ]; then
 		exit 1
 	fi
 
-	# treate selected number
+	# treat selected number
 	if [ ! -z ${BOARDNAME_STR[${SELECTED_BOARD}]} ]; then
 		BOARD=${BOARDNAME_STR[${SELECTED_BOARD}]}	
 	fi
 
-	# treate given board string
+	# treat given board string
 	if [ -z ${BOARD} ]; then
 		IDX=1
 		for BOARDNAME_MEMBER in ${BOARDNAME_STR[@]}; do
@@ -279,18 +330,18 @@ function SELECT_CONFIG()
 		read SELECTED_CONFIG
 	fi
 
-	# treate "exit"
+	# treat "exit"
 	if [ "${SELECTED_CONFIG}" == "x" -o "${SELECTED_CONFIG}" == "exit" -o "${SELECTED_CONFIG}" == "EXIT" ]; then
 		exit 0
 	fi
 
-	# treate selected number
+	# treat selected number
 	if [ ! -z ${CONFIGNAME_STR[${SELECTED_CONFIG}]} ]; then
 		CONFIG=${CONFIGNAME_STR[${SELECTED_CONFIG}]}
 		
 	fi
 
-	# treate given config string
+	# treat given config string
 	if [ -z ${CONFIG} ]; then
 		IDX=1
 		for CONFIGNAME_MEMBER in ${CONFIGNAME_STR[@]}; do
@@ -367,6 +418,21 @@ function SELECT_DL
 		echo "  \"x. Exit\""
 		echo ==================================================
 		read SELECTED_DL
+
+		if [ "${command[$SELECTED_DL - 1]}" == "ERASE SS" ]; then
+			echo -n "Warning, this will erase important data (Secure storage). Press 'y' or 'n' to continue : "
+			read PROCEED
+			if [ "$PROCEED" != "y" ]; then
+				exit 1
+			fi
+		fi
+		if [ "${command[$SELECTED_DL - 1]}" == "ERASE USERFS" ]; then
+                        echo -n "Warning, this will erase important data (User data). Press 'y' or 'n' to continue : "
+                        read PROCEED
+                        if [ "$PROCEED" != "y" ]; then
+                                exit 1
+                        fi
+                fi
 	fi
 
 	for ((i=1;i<=${#command[@]};i++)); do
@@ -385,24 +451,23 @@ function SELECT_DL
 	esac
 
 	if [ ! -z "${DL_ARG}" ]; then
-		STATUS=DOWNLOAD
+		STATUS=DOWNLOAD_READY
 	fi
 }
 
 function CONFIGURE()
 {
 	${OSDIR}/tools/configure.sh $1 || exit 1
-	STATUS=CONFIGURED
+	UPDATE_STATUS
 }
 
 function DOWNLOAD()
 {
 	# Currently supports ALL only, later this will have a menu
 	pushd ${OSDIR} > /dev/null
-	docker run --rm ${DOCKER_OPT} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${DOCKER_VERSION} ${BUILD_CMD} download $1 $2 $3 $4 $5 $6
+	docker run --rm ${DOCKER_OPT} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged ${DOCKER_IMAGE}:${DOCKER_VERSION} ${BUILD_CMD} download $1 $2 $3 $4 $5 $6
 	popd > /dev/null
 
-	exit 0
 }
 
 function UPDATE_STATUS()
@@ -417,6 +482,8 @@ function UPDATE_STATUS()
 			STATUS=CONFIGURED
 		fi
 	fi
+	GET_SPECIFIC_DOCKER_IMAGE
+	echo "Docker Image Version : ${DOCKER_IMAGE}:${DOCKER_VERSION}"
 }
 
 function BUILD()
@@ -434,29 +501,13 @@ function BUILD()
 	HOSTNAME="-h=`git config user.name | tr -d ' '`" # set github username instead of hostname, "-h=`hostname`"
 	LOCALTIME="-v /etc/localtime:/etc/localtime:ro"
 	
-	DOCKER_IMAGES=`docker images | grep tizenrt/tizenrt | awk '{print $2}'`
-	for im in $DOCKER_IMAGES
-	do
-		if [ "$im" == "$DOCKER_VERSION" ]; then
-			DOCKER_IMAGE_EXIST="true"
-			break
-		fi
-	done
-
-	if [ "$DOCKER_IMAGE_EXIST" != "true" ]; then
-		docker pull tizenrt/tizenrt:${DOCKER_VERSION}
-		if [ ! $? -eq 0 ]; then
-			DOCKER_VERSION="latest"
-		fi
-	fi
-	echo "Docker Image Version : ${DOCKER_VERSION}"
-	docker run --rm ${DOCKER_OPT} ${HOSTNAME} ${LOCALTIME} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged tizenrt/tizenrt:${DOCKER_VERSION} ${BUILD_CMD} $1 2>&1 | tee build.log
+	docker run --rm ${DOCKER_OPT} ${HOSTNAME} ${LOCALTIME} -v ${TOPDIR}:/root/tizenrt -w /root/tizenrt/os --privileged ${DOCKER_IMAGE}:${DOCKER_VERSION} ${BUILD_CMD} $1 2>&1 | tee build.log
 	UPDATE_STATUS
 }
 
 function MENU()
 {
-	while [ "${STATUS}" != "DOWNLOAD" ]; do
+	while [ 1 ]; do
 		case ${STATUS} in
 		NOT_CONFIGURED)
 			SELECT_BOARD
@@ -467,6 +518,10 @@ function MENU()
 			;;
 		PREPARE_DL)
 			SELECT_DL
+			;;
+		DOWNLOAD_READY)
+			DOWNLOAD ${DL_ARG}
+			STATUS=BUILT
 			;;
 		*)
 			echo "Invalid Status!! ${STATUS}"
@@ -489,7 +544,7 @@ elif [ "$1" == "menu" ]; then
 	MENU
 else
 	while test $# -gt 0; do
-		if [ "${STATUS}" == "PREPARE_DL" -o "${STATUS}" == "DOWNLOAD" ]; then
+		if [ "${STATUS}" == "PREPARE_DL" -o "${STATUS}" == "DOWNLOAD_READY" ]; then
 			if [ "$1" == "all" ]; then
 				ARG=$(echo $1 | tr '[:lower:]' '[:upper:]')
 			else
@@ -508,9 +563,9 @@ else
 		CONFIGURED|BUILT)
 			SELECT_OPTION ${ARG}
 			;;
-		PREPARE_DL|DOWNLOAD)
+		PREPARE_DL|DOWNLOAD_READY)
 			DL_ARG+="${ARG} "
-			STATUS=DOWNLOAD
+			STATUS=DOWNLOAD_READY
 			;;
 		*)
 			echo "Invalid Status!! ${STATUS}"
@@ -521,7 +576,7 @@ else
 	done
 fi
 
-if [ "${STATUS}" == "DOWNLOAD" ]; then
+if [ "${STATUS}" == "DOWNLOAD_READY" ]; then
 	DOWNLOAD ${DL_ARG}
 fi
 exit 0

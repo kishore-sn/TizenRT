@@ -109,6 +109,10 @@ SECTIONS
         *(.gnu.linkonce.b.*)
         *(COMMON)
         _ebss = ABSOLUTE(.);
+	_sidle_stack = ABSOLUTE(.);
+	. = . + CONFIG_IDLETHREAD_STACKSIZE ;
+	/* Heap start address in internal RAM */
+	_sint_heap = ABSOLUTE(.);
     } > usram
 
     /* Stabs debugging sections */

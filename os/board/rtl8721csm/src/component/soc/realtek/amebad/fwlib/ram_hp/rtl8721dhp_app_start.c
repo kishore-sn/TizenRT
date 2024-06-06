@@ -14,6 +14,7 @@
 #include "ameba_soc.h"
 #include "rtl8721d_system.h"
 #include "psram_reserve.h"
+#include "amebad_reboot_reason.h"
 #ifdef CONFIG_ARMV8M_MPU
 #include "up_mpuinit.h"
 #endif
@@ -43,14 +44,19 @@ void app_init_psram(void);
 #ifdef CONFIG_PLATFORM_TIZENRT_OS
 extern void vPortEnterCritical(void);
 extern void vPortExitCritical(void);
-extern unsigned int _ebss;
+extern unsigned int _sidle_stack;
+extern unsigned int _sint_heap;
+extern unsigned int _sext_heap;
 extern unsigned int __StackLimit;
 extern unsigned int __PsramStackLimit;
-#define IDLE_STACK ((uintptr_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE-4)
-#define HEAP_BASE  ((uintptr_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
+#define IDLE_STACK ((uintptr_t)&_sidle_stack + CONFIG_IDLETHREAD_STACKSIZE - 4)
+#define HEAP_BASE  ((uintptr_t)&_sint_heap)
 #define HEAP_LIMIT ((uintptr_t)&__StackLimit)
-#define PSRAM_HEAP_BASE ((uintptr_t)&__psram_bss_end__[0])
+#define PSRAM_HEAP_BASE ((uintptr_t)&_sext_heap)
 #define PSRAM_HEAP_LIMIT ((uintptr_t)&__PsramStackLimit)
+
+const uintptr_t g_idle_topstack = IDLE_STACK;
+
 void os_heap_init(void){
 	kregionx_start[0] = (void *)HEAP_BASE;
 	kregionx_size[0] = (size_t)(HEAP_LIMIT - HEAP_BASE);
@@ -77,7 +83,7 @@ void os_heap_init(void){
 	}
 #endif
 }
-#define dbg_printf DiagPrintf
+#define dbg_printf rtw_printf
 typedef struct fault_handler_back_trace_s {
     uint32_t msp_top;         /*!< the Top address of the MSP */
     uint32_t msp_limit;       /*!< the Limit address of the MSP */
@@ -1047,6 +1053,15 @@ void app_mpu_s_nocache_init(void)
 #endif
 }
 
+#ifdef CONFIG_AMEBAD_TRUSTZONE
+void app_hardfualt_s_prehanlder(uint32_t fault_id)
+{
+	//write reboot reason, TrustZone watchdog
+	BKUP_Write(BKUP_REG1, REBOOT_SYSTEM_TZWD_RESET);
+	PANIC();
+}
+#endif
+
 VOID app_vdd1833_detect(VOID)
 {
 	u32 temp;
@@ -1057,7 +1072,7 @@ VOID app_vdd1833_detect(VOID)
 		HAL_WRITE32(SYSTEM_CTRL_BASE_HP, REG_HS_RFAFE_IND_VIO1833, temp);
 	}
 
-	DBG_8195A("REG_HS_RFAFE_IND_VIO1833 (0 is 1.8V): %x\n", HAL_READ32(SYSTEM_CTRL_BASE_HP, REG_HS_RFAFE_IND_VIO1833));
+	DiagPrintf("REG_HS_RFAFE_IND_VIO1833 (0 is 1.8V): %x\n", HAL_READ32(SYSTEM_CTRL_BASE_HP, REG_HS_RFAFE_IND_VIO1833));
 }
 
 #if defined (__GNUC__)
@@ -1069,11 +1084,11 @@ void INT_HardFault_Patch_C(uint32_t mstack[], uint32_t pstack[], uint32_t lr_val
 {
 	u8 IsPstack = 0;
 
-	DBG_8195A("\r\nHard Fault Patch (Non-secure)\r\n");
+	DiagPrintf("\r\nHard Fault Patch (Non-secure)\r\n");
 
 	/* EXC_RETURN.S, 1: original is Secure, 0: original is Non-secure */
 	if (lr_value & BIT(6)) {					//Taken from S
-		DBG_8195A("\nException taken from Secure to Non-secure.\nSecure stack is used to store context." 
+		DiagPrintf("\nException taken from Secure to Non-secure.\nSecure stack is used to store context."
 			"It can not be dumped from non-secure side for security reason!!!\n");
 
 		while(1);
@@ -1317,7 +1332,7 @@ static void app_driver_call_os_func_init(void)
 // The Main App entry point
 void app_start(void)
 {
-	//cmse_address_info_t cmse_address_info = cmse_TT((void *)DiagPrintf);
+	//cmse_address_info_t cmse_address_info = cmse_TT((void *)rtw_printf);
 
 	irq_table_init(MSP_RAM_HP_NS); /* NS Vector table init */
 	VectorTableOverride();
@@ -1376,6 +1391,10 @@ extern void __libc_init_array(void);
 	mpu_init();
 	app_mpu_nocache_init();
 	app_mpu_s_nocache_init();
+
+#ifdef CONFIG_AMEBAD_TRUSTZONE
+	Secure_VectorTableOverride(app_hardfualt_s_prehanlder);
+#endif
 #endif
 	app_vdd1833_detect();
 	memcpy_gdma_init();
@@ -1393,7 +1412,7 @@ extern void __libc_init_array(void);
 #ifdef CONFIG_STACK_COLORATION
 	/* Set the IDLE stack to the coloration value and jump into os_start() */
 
-	go_os_start((FAR void *)&_ebss, CONFIG_IDLETHREAD_STACKSIZE);
+	go_os_start((FAR void *)g_idle_topstack - CONFIG_IDLETHREAD_STACKSIZE, CONFIG_IDLETHREAD_STACKSIZE);
 #else
 	/* Call os_start() */
 
@@ -1430,4 +1449,5 @@ RAM_START_FUNCTION Img2EntryFun0 = {
 	NULL,//BOOT_RAM_WakeFromPG,
 	(u32)NewVectorTable
 };
+
 

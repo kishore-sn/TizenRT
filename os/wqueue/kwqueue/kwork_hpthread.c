@@ -81,7 +81,7 @@
 
 /* The state of the kernel mode, high priority work queue. */
 
-struct hp_wqueue_s g_hpwork;
+static struct hp_wqueue_s g_hpwork;
 
 /****************************************************************************
  * Private Data
@@ -152,6 +152,11 @@ static int work_hpthread(int argc, char *argv[])
  * Public Functions
  ****************************************************************************/
 
+struct hp_wqueue_s *get_hpwork(void)
+{
+	return &g_hpwork;
+}
+
 /****************************************************************************
  * Name: work_hpstart
  *
@@ -186,7 +191,7 @@ int work_hpstart(void)
 		int errcode = errno;
 		DEBUGASSERT(errcode > 0);
 
-		slldbg("kernel_thread failed: %d\n", errcode);
+		sdbg("kernel_thread failed: %d\n", errcode);
 		return -errcode;
 	}
 

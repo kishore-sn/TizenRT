@@ -30,18 +30,20 @@
 
 #pragma once
 
-#include <time.h>
+#include <sys/time.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Length defines */
-#define WIFIMGR_MACADDR_LEN        6
-#define WIFIMGR_MACADDR_STR_LEN    17
-#define WIFIMGR_SSID_LEN           32
-#define WIFIMGR_2G_CHANNEL_MAX     14
-#define WIFIMGR_PASSPHRASE_LEN     64
+#define WIFIMGR_MACADDR_LEN          6
+#define WIFIMGR_MACADDR_STR_LEN      17
+#define WIFIMGR_SSID_LEN             32
+#define WIFIMGR_2G_CHANNEL_MAX       14
+#define WIFIMGR_PASSPHRASE_LEN       64
+#define WIFIMGR_SPECIFIC_SCAN_AP_CNT 6
 /**
  * @brief <b> wifi MAC/PHY standard types
  */
@@ -86,16 +88,11 @@ typedef enum {
 	WIFI_MANAGER_ALREADY_CONNECTED,
 	WIFI_MANAGER_CALLBACK_NOT_REGISTERED,
 	WIFI_MANAGER_NOT_AVAILABLE,
-	WIFI_MANAGER_NO_API,
-} wifi_manager_result_e;
-
-/**
- * @brief Wi-Fi disconnect event reason
- */
-typedef enum {
 	WIFI_MANAGER_DISCONNECT,
-	WIFI_MANAGER_RECONNECT, //AUTOCONNECT
-} wifi_manager_disconnect_e;
+	WIFI_MANAGER_RECONNECT, // AUTOCONNECT
+	WIFI_MANAGER_NO_API,
+	WIFI_MANAGER_POST_FAIL,
+} wifi_manager_result_e;
 
 /**
  * @brief Mode of Wi-Fi interface such as station mode or ap mode
@@ -120,14 +117,6 @@ typedef enum {
 } wifi_manager_reconn_type_e;
 
 /**
- * @brief Result types of nearby access point scanning
- */
-typedef enum {
-	WIFI_SCAN_FAIL = -1,
-	WIFI_SCAN_SUCCESS,
-} wifi_manager_scan_result_e;
-
-/**
  * @brief Wi-Fi authentication type such as WPA, WPA2, or WPS
  */
 typedef enum {
@@ -137,6 +126,7 @@ typedef enum {
 	WIFI_MANAGER_AUTH_WPA2_PSK,                /**<  WPA2_PSK mode                             */
 	WIFI_MANAGER_AUTH_WPA3_PSK,                /**<  WPA3_PSK mode                             */
 	WIFI_MANAGER_AUTH_WPA_AND_WPA2_PSK,        /**<  WPA_PSK and WPA_PSK mixed mode            */
+	WIFI_MANAGER_AUTH_WPA2_AND_WPA3_PSK,        /**<  WPA_PSK and WPA_PSK mixed mode            */
 	WIFI_MANAGER_AUTH_WPA_PSK_ENT,             /**<  Enterprise WPA_PSK mode                   */
 	WIFI_MANAGER_AUTH_WPA2_PSK_ENT,            /**<  Enterprise WPA2_PSK mode                  */
 	WIFI_MANAGER_AUTH_WPA_AND_WPA2_PSK_ENT,    /**<  Enterprise WPA_PSK and WPA_PSK mixed mode */
@@ -177,15 +167,28 @@ struct wifi_manager_scan_info_s {
 
 typedef struct wifi_manager_scan_info_s wifi_manager_scan_info_s;
 
+struct wifi_manager_cb_msg {
+	wifi_manager_result_e res;
+	uint32_t reason;
+	uint8_t bssid[6];
+	wifi_manager_scan_info_s *scanlist;
+};
+typedef struct wifi_manager_cb_msg wifi_manager_cb_msg_s;
+
 /**
  * @brief Include callback functions which are asynchronously called after Wi-Fi Manager APIs are called
  */
 typedef struct {
-	void (*sta_connected)(wifi_manager_result_e);	// in station mode, connected to ap
-	void (*sta_disconnected)(wifi_manager_disconnect_e);		// in station mode, disconnected from ap
-	void (*softap_sta_joined)(void);	// in softap mode, a station joined
-	void (*softap_sta_left)(void);		// in softap mode, a station left
-	void (*scan_ap_done)(wifi_manager_scan_info_s **, wifi_manager_scan_result_e); // scanning ap is done
+	// in station mode, connected to ap
+	void (*sta_connected)(wifi_manager_cb_msg_s msg, void *arg);
+	// in station mode, disconnected from ap
+	void (*sta_disconnected)(wifi_manager_cb_msg_s msg, void *arg);
+	// in softap mode, a station joined
+	void (*softap_sta_joined)(wifi_manager_cb_msg_s msg, void *arg);
+	// in softap mode, a station left
+	void (*softap_sta_left)(wifi_manager_cb_msg_s msg, void *arg);
+	// scanning ap is done
+	void (*scan_ap_done)(wifi_manager_cb_msg_s msg, void *arg);
 } wifi_manager_cb_s;
 
 /**
@@ -237,6 +240,11 @@ typedef struct {
 	char ssid[WIFIMGR_SSID_LEN + 1];                  /**<  Service Set Identification            */
 	unsigned int ssid_length;                         /**<  Service Set Identification Length     */
 } wifi_manager_scan_config_s;
+
+typedef struct {
+	wifi_manager_scan_config_s ap_configs[WIFIMGR_SPECIFIC_SCAN_AP_CNT];    /**< The AP configurations to scan */
+	unsigned int scan_ap_config_count;                                    /**< The count of AP to scan       */
+} wifi_manager_scan_multi_configs_s;
 
 /**
  * @brief Specify Wi-Fi Manager internal stats information
@@ -402,6 +410,17 @@ wifi_manager_result_e wifi_manager_scan_ap(wifi_manager_scan_config_s *config);
  * @deprecated TizenRT v3.1
  */
 wifi_manager_result_e wifi_manager_scan_specific_ap(wifi_manager_ap_config_s *config);
+
+/**
+ * @brief Scan nearby access points
+ * @details @b #include <wifi_manager/wifi_manager.h>
+ * @param[in] configs Required a number of scan configurations with its count, See wifi_manager_scan_ap for more details.
+ * @return On success, WIFI_MANAGER_SUCCESS (i.e., 0) is returned. On failure, non-zero value is returned.
+ * @API type: asynchronous
+ * @callback: scan_ap_done
+ * @since TizenRT v4.1
+ */
+wifi_manager_result_e wifi_manager_scan_multi_aps(wifi_manager_scan_multi_configs_s *configs);
 
 /**
  * @brief Save the AP configuration at persistent storage

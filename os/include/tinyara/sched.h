@@ -80,7 +80,12 @@
 #include <tinyara/mm/shm.h>
 #include <tinyara/fs/fs.h>
 #include <tinyara/net/net.h>
+#ifdef CONFIG_ARM_MPU
 #include <tinyara/mpu.h>
+#endif
+#ifdef CONFIG_ARCH_USE_MMU
+#include <tinyara/mmu.h>
+#endif
 #include <arch/arch.h>
 #ifdef CONFIG_ARMV8M_TRUSTZONE
 #include <tinyara/tz_context.h>
@@ -170,7 +175,8 @@
  #  define TCB_FLAG_SCHED_OTHER     (3 << TCB_FLAG_POLICY_SHIFT) /* Other scheding policy */
 #define TCB_FLAG_CPU_LOCKED        (1 << 7) /* Bit 7: Locked to this CPU */
 #define TCB_FLAG_EXIT_PROCESSING   (1 << 8) /* Bit 8: Exitting */
-											/* Bits 9-15: Available */
+#define TCB_FLAG_SYSCALL           (1 << 10)                     /* Bit 9: In a system call */
+/* Bits 11-15: Available */
 
 /* Values for struct task_group tg_flags */
 
@@ -213,6 +219,9 @@ enum tstate_e {
 	TSTATE_TASK_INVALID = 0,	/* INVALID      - The TCB is uninitialized */
 	TSTATE_TASK_PENDING,		/* READY_TO_RUN - Pending preemption unlock */
 	TSTATE_TASK_READYTORUN,		/* READY-TO-RUN - But not running */
+#ifdef CONFIG_SMP
+	TSTATE_TASK_ASSIGNED,		/* READY-TO-RUN - Not running, but assigned to a CPU */
+#endif
 	TSTATE_TASK_RUNNING,		/* READY_TO_RUN - And running */
 
 	TSTATE_TASK_INACTIVE,		/* BLOCKED      - Initialized but not yet activated */
@@ -236,6 +245,8 @@ typedef enum tstate_e tstate_t;
 
 #define FIRST_READY_TO_RUN_STATE TSTATE_TASK_READYTORUN
 #define LAST_READY_TO_RUN_STATE  TSTATE_TASK_RUNNING
+#define FIRST_ASSIGNED_STATE       TSTATE_TASK_ASSIGNED
+#define LAST_ASSIGNED_STATE        TSTATE_TASK_RUNNING
 #define FIRST_BLOCKED_STATE      TSTATE_TASK_INACTIVE
 #define LAST_BLOCKED_STATE       (NUM_TASK_STATES-1)
 
@@ -319,6 +330,21 @@ struct dspace_s {
 	FAR uint8_t *region;
 };
 #endif
+
+/* struct stackinfo_s *******************************************************/
+
+/* Used to report stack information */
+
+struct stackinfo_s {
+	size_t    adj_stack_size;	/* Stack size after adjustment         */
+					/* for hardware, processor, etc.       */
+					/* (for debug purposes only)           */
+	FAR void *stack_alloc_ptr;	/* Pointer to allocated stack          */
+					/* Needed to deallocate stack          */
+	FAR void *stack_base_ptr;	/* Adjusted initial stack pointer      */
+					/* after the frame has been removed    */
+					/* from the stack.                     */
+};
 
 /* struct task_group_s ***********************************************************/
 /* All threads created by pthread_create belong in the same task group (along with
@@ -426,6 +452,10 @@ struct task_group_s {
 	pthread_destructor_t tg_destructor[PTHREAD_KEYS_MAX];	/* Address list of each destructor */
 #endif
 #endif
+
+	/* Thread local storage ***************************************************/
+
+	FAR struct task_info_s *tg_info;
 
 #ifndef CONFIG_DISABLE_SIGNALS
 	/* POSIX Signal Control Fields *********************************************** */
@@ -553,6 +583,14 @@ struct tcb_s {
 	uint8_t task_state;			/* Current state of the thread         */
 	uint16_t flags;				/* Misc. general status flags          */
 	int16_t lockcount;			/* 0=preemptable (not-locked)          */
+#ifdef CONFIG_SMP
+	uint8_t  cpu;				/* CPU index if running/assigned       */
+	cpu_set_t affinity;			/* Bit set of permitted CPUs           */
+#endif
+#ifdef CONFIG_IRQCOUNT
+	int16_t irqcount;			/* 0=NOT in critical section           */
+#endif
+
 #ifdef CONFIG_CANCELLATION_POINTS
 	int16_t cpcount;			/* Nested cancellation point count     */
 #endif
@@ -570,6 +608,8 @@ struct tcb_s {
 	FAR void *stack_alloc_ptr;	/* Pointer to allocated stack          */
 	/* Need to deallocate stack            */
 	FAR void *adj_stack_ptr;	/* Adjusted stack_alloc_ptr for HW     */
+	FAR void *stack_base_ptr;              /* Adjusted initial stack pointer  */
+
 	/* The initial stack pointer value     */
 
 #ifdef CONFIG_MPU_STACKGUARD
@@ -621,18 +661,21 @@ struct tcb_s {
 	uint32_t uheap;			/* User heap object pointer */
 #ifdef CONFIG_APP_BINARY_SEPARATION
 	uint32_t uspace;		/* User space object for app binary */
+	uint32_t app_id;			/* Indicates app id of the task */
 
-#ifdef CONFIG_ARM_MPU
-	uint32_t mpu_regs[MPU_REG_NUMBER * MPU_NUM_REGIONS];	/* MPU register values for loading data */
+#ifdef CONFIG_ARCH_USE_MMU
+	uint32_t *pgtbl;			/* Pointer to L1 page table of app */
+#endif
+
+#ifdef CONFIG_ARM_MPU						/* MPU register values for loadable apps only */
+	uint32_t mpu_regs[MPU_REG_NUMBER * NUM_APP_REGIONS];	/* MPU for apps is configured during loading and disabled in task_terminate */
 #endif
 #endif
 
-#if defined(CONFIG_MPU_STACK_OVERFLOW_PROTECTION)
-uint32_t stack_mpu_regs[MPU_REG_NUMBER]; /* MPU register values for stack protection */
+#if defined(CONFIG_MPU_STACK_OVERFLOW_PROTECTION)		/* MPU register values for stack protection */
+	uint32_t stack_mpu_regs[MPU_REG_NUMBER];		/* MPU for stack is configured during stack creation and disabled at stack release */
 #endif
-#ifdef CONFIG_SUPPORT_COMMON_BINARY
-	uint32_t app_id;			/* Indicates app id of the task and used to index into umm_heap_table */
-#endif
+
 
 #ifdef CONFIG_ARMV8M_TRUSTZONE
 	volatile TZ_ModuleId_t tz_context;
@@ -925,6 +968,52 @@ pid_t task_vforkstart(FAR struct task_tcb_s *child);
  * @internal
  */
 void task_vforkabort(FAR struct task_tcb_s *child, int errcode);
+
+/****************************************************************************
+ * Name: sched_resume_scheduler
+ *
+ * Description:
+ *   Called by architecture specific implementations that block task
+ *   execution.
+ *   This function prepares the scheduler for the thread that is about to be
+ *   restarted.
+ *
+ * Input Parameters:
+ *   tcb - The TCB of the thread to be restarted.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+#if CONFIG_RR_INTERVAL > 0 || defined(CONFIG_SCHED_RESUMESCHEDULER)
+void sched_resume_scheduler(FAR struct tcb_s *tcb);
+#else
+#  define sched_resume_scheduler(tcb)
+#endif
+
+/****************************************************************************
+ * Name: sched_suspend_scheduler
+ *
+ * Description:
+ *   Called by architecture specific implementations to resume task
+ *   execution.
+ *   This function performs scheduler operations for the thread that is about
+ *   to be suspended.
+ *
+ * Input Parameters:
+ *   tcb - The TCB of the thread to be restarted.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SCHED_SUSPENDSCHEDULER
+void sched_suspend_scheduler(FAR struct tcb_s *tcb);
+#else
+#  define sched_suspend_scheduler(tcb)
+#endif
 
 /**
  * @endcond

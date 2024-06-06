@@ -18,8 +18,18 @@
 ############################################################################
 import os
 import sys
+import config_util as util
 
-TOOL_DIR = os.getcwd() + '/tools/'
+OS_DIR = os.path.dirname(__file__) + '/..'
+TOOL_DIR = OS_DIR + '/tools'
+BUILD_DIR = OS_DIR + '/../build'
+OUTPUT_DIR = BUILD_DIR + '/output/bin'
+
+CFG_PATH = OS_DIR + '/.config'
+
+# Check the board type. Because kernel binary name is different based on board type.
+BOARD_TYPE = util.get_value_from_file(CFG_PATH, "CONFIG_ARCH_BOARD=").replace('"', '').rstrip("\n")
+
 ############################################################################
 #
 # This script generates samsung binary header for kernel.
@@ -36,17 +46,29 @@ TOOL_DIR = os.getcwd() + '/tools/'
 #
 # parameter information :
 #
-# argv[1] is file path of binary file.
+# argv[1] is a extension name of kernel binary
 # argv[2] is a type of binary, kernel or user.
 # argv[3] is a size of secure header which is board-specific.
 #
 ############################################################################
-binary_path = sys.argv[1]
+
+source_ext_name = sys.argv[1]
+if source_ext_name != '' :
+	source_ext_name = '.' + source_ext_name
+
+# Read the kernel binary name from board_metadata.txt.
+metadata_file = BUILD_DIR + '/configs/' + BOARD_TYPE + '/board_metadata.txt'
+if os.path.isfile(metadata_file) :
+	kernel_bin_name = util.get_value_from_file(metadata_file, "KERNEL=").replace('"','').rstrip('\n') + source_ext_name
+else :
+	kernel_bin_name = "tinyara.bin"
+
+binary_path = OUTPUT_DIR + '/' + kernel_bin_name
 binary_type = sys.argv[2]
 secure_header_size = sys.argv[3]
 
-mkbinheader_path = TOOL_DIR + 'mkbinheader.py'
-mkchecksum_path = TOOL_DIR + 'mkchecksum.py'
+mkbinheader_path = TOOL_DIR + '/mkbinheader.py'
+mkchecksum_path = TOOL_DIR + '/mkchecksum.py'
 
 ############################################################################
 # Generate Samsung headers

@@ -70,29 +70,6 @@
  * Pre-processor Macros
  ****************************************************************************/
 
-/* ARM requires at least a 4-byte stack alignment.  For use with EABI and
- * floating point, the stack must be aligned to 8-byte addresses.
- */
-
-#ifndef CONFIG_STACK_ALIGNMENT
-
-/* The symbol  __ARM_EABI__ is defined by GCC if EABI is being used.  If you
- * are not using GCC, make sure that CONFIG_STACK_ALIGNMENT is set correctly!
- */
-
-#ifdef __ARM_EABI__
-#define CONFIG_STACK_ALIGNMENT 8
-#else
-#define CONFIG_STACK_ALIGNMENT 4
-#endif
-#endif
-
-/* Stack alignment macros */
-
-#define STACK_ALIGN_MASK    (CONFIG_STACK_ALIGNMENT-1)
-#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
-#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -156,7 +133,11 @@ int up_use_stack(struct tcb_s *tcb, void *stack, size_t stack_size)
 	 * referenced as positive word offsets from sp.
 	 */
 
+#ifdef CONFIG_ARCH_ARMV7A_FAMILY
+	top_of_stack = (uint32_t)tcb->stack_alloc_ptr + stack_size;
+#else
 	top_of_stack = (uint32_t)tcb->stack_alloc_ptr + stack_size - 4;
+#endif
 
 	/* The ARM stack must be aligned; 4 byte alignment for OABI and 8-byte
 	 * alignment for EABI. If necessary top_of_stack must be rounded down
@@ -171,15 +152,20 @@ int up_use_stack(struct tcb_s *tcb, void *stack, size_t stack_size)
 	 * The size need not be aligned.
 	 */
 
+#ifdef CONFIG_ARCH_ARMV7A_FAMILY
+	size_of_stack = top_of_stack - (uint32_t)tcb->stack_alloc_ptr;
+#else
 	size_of_stack = top_of_stack - (uint32_t)tcb->stack_alloc_ptr + 4;
+#endif
 
 	/* Save the adjusted stack values in the struct tcb_s */
 
 	tcb->adj_stack_ptr = (uint32_t *)top_of_stack;
+	tcb->stack_base_ptr  = tcb->stack_alloc_ptr;
 	tcb->adj_stack_size = size_of_stack;
 
 #ifdef CONFIG_STACK_COLORATION
-	up_stack_color(tcb->stack_alloc_ptr, tcb->adj_stack_size);
+	up_stack_color(tcb->stack_alloc_ptr, tcb->adj_stack_ptr);
 #endif
 	return OK;
 }

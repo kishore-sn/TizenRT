@@ -65,7 +65,7 @@ BINFMT_ASRCS  =
 BINFMT_CSRCS  = binfmt_globals.c binfmt_initialize.c binfmt_register.c binfmt_unregister.c
 BINFMT_CSRCS += binfmt_loadmodule.c binfmt_unloadmodule.c binfmt_execmodule.c
 BINFMT_CSRCS += binfmt_exec.c binfmt_copyargv.c binfmt_dumpmodule.c
-BINFMT_CSRCS += binfmt_loadbinary.c
+BINFMT_CSRCS += binfmt_loadbinary.c binfmt_arch_apis.c
 
 ifeq ($(CONFIG_BINFMT_LOADABLE),y)
 BINFMT_CSRCS += binfmt_exit.c
@@ -75,6 +75,9 @@ ifeq ($(CONFIG_LIBC_EXECFUNCS),y)
 BINFMT_CSRCS += binfmt_execsymtab.c
 endif
 
+ifeq ($(CONFIG_ARCH_USE_MMU),y)
+BINFMT_CSRCS += binfmt_pgtable.c
+endif
 # Add configured binary modules
 
 VPATH =
@@ -82,6 +85,7 @@ SUBDIRS =
 DEPPATH = --dep-path .
 
 include libelf$(DELIM)Make.defs
+include libxipelf$(DELIM)Make.defs
 include libbuiltin$(DELIM)Make.defs
 
 BINFMT_AOBJS = $(BINFMT_ASRCS:.S=$(OBJEXT))

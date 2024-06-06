@@ -171,8 +171,10 @@ int mq_verifysend(mqd_t mqdes, FAR const char *msg, size_t msglen, int prio)
  *   None
  *
  * Return Value:
- *   A reference to the allocated msg structure.  On a failure to allocate,
- *   this function PANICs.
+ *   A reference to the allocated msg structure.
+ *   NULL on a failure to allocate,
+ *    if from interrupt handler, set the errno as EBUSY,
+ *    if from normal thread, set the errno as ENOMEM.
  *
  ****************************************************************************/
 
@@ -195,6 +197,9 @@ FAR struct mqueue_msg_s *mq_msgalloc(void)
 
 			mqmsg = (FAR struct mqueue_msg_s *)sq_remfirst(&g_msgfreeirq);
 		}
+		if (!mqmsg) {
+			set_errno(EBUSY);
+		}
 	}
 
 	/* We were not called from an interrupt handler. */
@@ -204,9 +209,9 @@ FAR struct mqueue_msg_s *mq_msgalloc(void)
 		 * Disable interrupts -- we might be called from an interrupt handler.
 		 */
 
-		saved_state = irqsave();
+		saved_state = enter_critical_section();
 		mqmsg = (FAR struct mqueue_msg_s *)sq_remfirst(&g_msgfree);
-		irqrestore(saved_state);
+		leave_critical_section(saved_state);
 
 		/* If we cannot a message from the free list, then we will have to allocate one. */
 
@@ -214,9 +219,11 @@ FAR struct mqueue_msg_s *mq_msgalloc(void)
 			mqmsg = (FAR struct mqueue_msg_s *)kmm_malloc((sizeof(struct mqueue_msg_s)));
 
 			/* Check if we got an allocated message */
-
-			ASSERT(mqmsg);
-			mqmsg->type = MQ_ALLOC_DYN;
+			if (mqmsg) {
+				mqmsg->type = MQ_ALLOC_DYN;
+			} else {
+				set_errno(ENOMEM);
+			}
 		}
 	}
 
@@ -372,7 +379,7 @@ int mq_dosend(mqd_t mqdes, FAR struct mqueue_msg_s *mqmsg, FAR const char *msg, 
 
 	/* Insert the new message in the message queue */
 
-	saved_state = irqsave();
+	saved_state = enter_critical_section();
 
 	/* Search the message list to find the location to insert the new
 	 * message. Each is list is maintained in ascending priority order.
@@ -391,7 +398,7 @@ int mq_dosend(mqd_t mqdes, FAR struct mqueue_msg_s *mqmsg, FAR const char *msg, 
 	/* Increment the count of messages in the queue */
 
 	msgq->nmsgs++;
-	irqrestore(saved_state);
+	leave_critical_section(saved_state);
 
 	/* Check if we need to notify any tasks that are attached to the
 	 * message queue
@@ -428,7 +435,7 @@ int mq_dosend(mqd_t mqdes, FAR struct mqueue_msg_s *mqmsg, FAR const char *msg, 
 
 	/* Check if any tasks are waiting for the MQ not empty event. */
 
-	saved_state = irqsave();
+	saved_state = enter_critical_section();
 	if (msgq->nwaitnotempty > 0) {
 		/* Find the highest priority task that is waiting for
 		 * this queue to be non-empty in g_waitingformqnotempty
@@ -447,7 +454,7 @@ int mq_dosend(mqd_t mqdes, FAR struct mqueue_msg_s *mqmsg, FAR const char *msg, 
 		up_unblock_task(btcb);
 	}
 
-	irqrestore(saved_state);
+	leave_critical_section(saved_state);
 	sched_unlock();
 	trace_end(TTRACE_TAG_IPC);
 	return OK;

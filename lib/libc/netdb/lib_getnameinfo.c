@@ -26,6 +26,7 @@
 #include <sys/ioctl.h>
 #include <netdb.h>
 #include <errno.h>
+#include <tinyara/netmgr/netctl.h>
 
 /****************************************************************************
  * Public Functions
@@ -56,30 +57,36 @@
  * Name: getnameinfo
  ****************************************************************************/
 #if defined(CONFIG_NET_LWIP_NETDB) && defined(LWIP_COMPAT_SOCKETS)
-int getnameinfo(const struct sockaddr *sa, size_t salen, char *host, size_t hostlen, char *serv, size_t servlen, int flags)
+int getnameinfo(const struct sockaddr *sa,
+				size_t salen,
+				char *host,
+				size_t hostlen,
+				char *serv,
+				size_t servlen,
+				int flags)
 {
 	int ret = -1;
 	struct req_lwip_data req;
 
 	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sockfd < 0) {
-		printf("socket() failed with errno: %d\n", errno);
+		printf("socket() failed with errno: %d\t%s\n", errno, __FUNCTION__);
 		return ret;
 	}
 
 	memset(&req, 0, sizeof(req));
 	req.type = GETNAMEINFO;
-	req.sa = sa;
-	req.sa_len = salen;
-	req.host_name = host;
-	req.host_len = hostlen;
-	req.serv_name = serv;
-	req.serv_len = servlen;
-	req.flags = flags;
+	req.msg.netdb.sa = sa;
+	req.msg.netdb.sa_len = salen;
+	req.msg.netdb.host_name = host;
+	req.msg.netdb.host_len = hostlen;
+	req.msg.netdb.serv_name = serv;
+	req.msg.netdb.serv_len = servlen;
+	req.msg.netdb.flags = flags;
 
 	ret = ioctl(sockfd, SIOCLWIP, (unsigned long)&req);
 	if (ret == ERROR) {
-		printf("ioctl() failed with errno: %d\n", errno);
+		printf("ioctl() failed with errno: %d\t%s\n", errno, __FUNCTION__);
 		close(sockfd);
 		return ret;
 	}

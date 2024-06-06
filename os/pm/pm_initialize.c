@@ -63,6 +63,7 @@
 #include "pm_test.h"
 #include "pm.h"
 #include "pm_metrics.h"
+#include "pm_timer/pm_timer.h"
 
 #ifdef CONFIG_PM
 
@@ -79,6 +80,29 @@
  */
 
 struct pm_global_s g_pmglobals;
+
+/* The g_pm_timer_freelist is a singly linked list of pm timers available
+ * to the system */
+
+sq_queue_t g_pm_timer_freelist;
+
+/* The g_pm_timer_activelist data structure is a singly linked list ordered by
+ * pm wakeup timer expiration time.
+ */
+
+sq_queue_t g_pm_timer_activelist;
+
+/* This is the number of free, pre-allocated pm wakeup timer structures in the
+ * g_pm_timer_freelist. 
+ */
+
+uint16_t g_pm_timer_nfree;
+
+/* g_pm_list is a list of pre-allocated pm wakeup timers. The number of pm timers
+ * in the list is a configuration item.
+ */
+
+pm_timer_t g_pm_timer_pool[CONFIG_PM_MAX_STATIC_TIMER];
 
 /****************************************************************************
  * Public Functions
@@ -104,41 +128,53 @@ struct pm_global_s g_pmglobals;
 
 void pm_initialize(void)
 {
-	FAR struct pm_domain_s *pdom;
-	int i;
-
 	sem_init(&g_pmglobals.regsem, 0, 1);
 
-	for (i = 0; i < CONFIG_PM_NDOMAINS; i++) {
-		pdom = &g_pmglobals.domain[i];
-		pdom->stime = clock_systimer();
-		pdom->btime = clock_systimer();
+	g_pmglobals.stime = clock_systimer();
+	g_pmglobals.btime = clock_systimer();
 
+#ifdef CONFIG_PM_TICKSUPPRESS
+	/* Registers a handler to be called when the core wakes up */
+	up_register_wakehandler(pm_wakehandler);
+#endif
 
 #ifdef CONFIG_PM_METRICS
-		struct timespec cur_time;
+	struct timespec cur_time;
 
-		/* Get current time */
-		clock_gettime(CLOCK_REALTIME, &cur_time);
+	/* Get current time */
+	clock_gettime(CLOCK_REALTIME, &cur_time);
 
-		struct pm_statechange_s *initnode = NULL;
+	struct pm_statechange_s *initnode = NULL;
 
-		/* Initialize the domain's state history queue */
+	/* Initialize the domain's state history queue */
 
-		sq_init(&g_pmglobals.domain->history);
+	sq_init(&g_pmglobals.history);
 
-		/* Create an initial state change node with NORMAL state and bootup time */
+	/* Create an initial state change node with NORMAL state and bootup time */
 
-		initnode = (struct pm_statechange_s *)pm_alloc(1, sizeof(struct pm_statechange_s));
+	initnode = (struct pm_statechange_s *)pm_alloc(1, sizeof(struct pm_statechange_s));
 
-		initnode->state = PM_NORMAL;
-		initnode->timestamp = cur_time.tv_sec;
+	initnode->state = PM_NORMAL;
+	initnode->timestamp = cur_time.tv_sec;
 
-		/* Add the initial state change node to the head of the history queue */
+	/* Add the initial state change node to the head of the history queue */
 
-		sq_addlast((&initnode->entry), &g_pmglobals.domain->history);
+	sq_addlast((&initnode->entry), &g_pmglobals.history);
 #endif
+
+	/* Initialize pm timer list */
+	sq_init(&g_pm_timer_freelist);
+	sq_init(&g_pm_timer_activelist);
+
+	/* The g_pm_timer_freelist must be initiated */
+	pm_timer_t *timer = g_pm_timer_pool;
+	for (int i = 0; i < CONFIG_PM_MAX_STATIC_TIMER; i++) {
+		sq_addlast((pm_timer_t *)timer++, &g_pm_timer_freelist);
 	}
+
+	/* All pm timers are free */
+	g_pm_timer_nfree = CONFIG_PM_MAX_STATIC_TIMER;
+
 	pmtest_init();
 }
 #endif							/* CONFIG_PM */

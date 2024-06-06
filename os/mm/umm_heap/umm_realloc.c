@@ -70,6 +70,7 @@
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+#ifndef CONFIG_APP_BINARY_SEPARATION
 /************************************************************************
  * Name: realloc_at
  *
@@ -86,17 +87,38 @@
 #if CONFIG_KMM_NHEAPS > 1
 void *realloc_at(int heap_index, void *oldmem, size_t size)
 {
-	if (heap_index >= CONFIG_KMM_NHEAPS || heap_index < 0) {
-		mdbg("realloc_at failed. Wrong heap index (%d) of (%d)\n", heap_index, CONFIG_KMM_NHEAPS);
+	void *ret;
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	size_t caller_retaddr = 0;
+
+	ARCH_GET_RET_ADDRESS(caller_retaddr)
+#endif
+
+	if (heap_index > HEAP_END_IDX || heap_index < HEAP_START_IDX) {
+		mdbg("realloc_at failed. Wrong heap index (%d) of (%d)\n", heap_index, HEAP_END_IDX);
 		return NULL;
 	}
+
+	if (size == 0) {
+		mm_free(&BASE_HEAP[heap_index], oldmem);
+		return NULL;
+	}
+
+	ret = mm_realloc(&BASE_HEAP[heap_index], oldmem, size
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	ARCH_GET_RET_ADDRESS
-	return mm_realloc(&BASE_HEAP[heap_index], oldmem, size, retaddr);
-#else
-	return mm_realloc(&BASE_HEAP[heap_index], oldmem, size);
+			, caller_retaddr
 #endif
+			);
+	if (ret == NULL) {
+		mm_manage_alloc_fail(&BASE_HEAP[heap_index], heap_index, heap_index, size, USER_HEAP
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+				, caller_retaddr
+#endif
+				);
+	}
+	return ret;
 }
+#endif
 #endif
 /****************************************************************************
  * Name: realloc
@@ -115,37 +137,78 @@ void *realloc_at(int heap_index, void *oldmem, size_t size)
 
 FAR void *realloc(FAR void *oldmem, size_t size)
 {
-	int heap_idx;
 	int prev_heap_idx;
 	void *ret;
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	ARCH_GET_RET_ADDRESS
+	size_t caller_retaddr = 0;
+
+	ARCH_GET_RET_ADDRESS(caller_retaddr)
 #endif
-	heap_idx = mm_get_heapindex(oldmem);
-	if (heap_idx < 0) {
+
+#ifdef CONFIG_APP_BINARY_SEPARATION
+	if (size == 0) {
+		free(oldmem);
+		return NULL;
+	}	
+	/* User supports a single heap on app separation */
+	ret = mm_realloc(BASE_HEAP, oldmem, size
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+			, caller_retaddr
+#endif
+			);
+	if (ret == NULL) {
+		mm_manage_alloc_fail(BASE_HEAP, HEAP_START_IDX, HEAP_END_IDX, size, USER_HEAP
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+				, caller_retaddr
+#endif
+				);
+	}
+
+#else /* CONFIG_APP_BINARY_SEPARATION */
+	int heap_idx;
+	heap_idx = mm_get_index_of_heap(oldmem);
+	if (heap_idx < HEAP_START_IDX) {
 		return NULL;
 	}
+
+	if (size == 0) {
+		mm_free(&BASE_HEAP[heap_idx], oldmem);
+		return NULL;
+	}
+
+	/* Try to realloc in previous allocated heap */
+
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	ret = mm_realloc(&BASE_HEAP[heap_idx], oldmem, size, retaddr);
+	ret = mm_realloc(&BASE_HEAP[heap_idx], oldmem, size, caller_retaddr);
 #else
 	ret = mm_realloc(&BASE_HEAP[heap_idx], oldmem, size);
 #endif
 	if (ret != NULL) {
 		return ret;
 	}
+
 	/* Try to mm_malloc to another heap */
-	mdbg("After realloc, memory can be allocated to another heap which is not as same as previous.\n");
+
 	prev_heap_idx = heap_idx;
-	for (heap_idx = 0; heap_idx < CONFIG_KMM_NHEAPS; heap_idx++) {
+	for (heap_idx = HEAP_START_IDX; heap_idx <= HEAP_END_IDX; heap_idx++) {
+		ret = mm_malloc(&BASE_HEAP[heap_idx], size
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-		ret = mm_malloc(&BASE_HEAP[heap_idx], size, retaddr);
-#else
-		ret = mm_malloc(&BASE_HEAP[heap_idx], size);
+				, caller_retaddr
 #endif
+				);
 		if (ret != NULL) {
 			mm_free(&BASE_HEAP[prev_heap_idx], oldmem);
 			return ret;
 		}
 	}
-	return NULL;
+
+	mm_manage_alloc_fail(BASE_HEAP, HEAP_START_IDX, HEAP_END_IDX, size, USER_HEAP
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+			, caller_retaddr
+#endif
+			);
+
+#endif /* CONFIG_APP_BINARY_SEPARATION */
+
+	return ret;
 }

@@ -51,6 +51,81 @@ config RTL8721D_SERIAL_FIFO
 	bool "UART SERIAL FIFO"
 	default n
 
+config AMEBAD_I2S
+	bool "Enable Amebad I2S"
+	default n
+
+if AMEBAD_I2S
+config AMEBAD_I2S_RX
+	bool "Enable I2S RX"
+	default n
+
+config AMEBAD_I2S_TX
+	bool "Enable I2S TX"
+	default n
+
+config AMEBAD_I2S_16BIT_PADDING
+	bool "Enable I2S 16-bit padding"
+	default n
+	---help---
+		Enable 16-bit padding to send 16bit I2S data in 32bit word length
+endif
+
+config AMEBAD_I2C_DYNTIMEO
+	bool "[Amebad I2C]Use dynamic timeouts"
+	default n
+
+config AMEBAD_I2C_DYNTIMEO_USECPERBYTE
+	int "[Amebad I2C]Timeout Microseconds per Byte"
+	default 500
+	depends on AMEBAD_I2C_DYNTIMEO
+
+config AMEBAD_I2C_DYNTIMEO_STARTSTOP
+	int "[Amebad I2C]Timeout for Start/Stop (Milliseconds)"
+	default 1000
+	depends on AMEBAD_I2C_DYNTIMEO
+
+config AMEBAD_I2CTIMEOSEC
+	int "[Amebad I2C]Timeout seconds"
+	default 0
+	depends on !AMEBAD_I2C_DYNTIMEO
+
+config AMEBAD_I2CTIMEOMS
+	int "[Amebad I2C]Timeout Milliseconds"
+	default 500
+	depends on !AMEBAD_I2C_DYNTIMEO
+
+config AMEBAD_I2CTIMEOTICKS
+	int "[Amebad I2C]Timeout for Done and Stop (ticks)"
+	default 500
+	depends on !AMEBAD_I2C_DYNTIMEO
+
+config AMEBAD_SPI
+	bool "AMEBAD_SPI"
+	default n
+
+if AMEBAD_SPI
+config AMEBAD_SPI1_MASTER
+	bool "AMEBAD SPI1_MASTER"
+	default y
+
+config AMEBAD_SPI_CS
+	bool "AMEBAD Multi-slaves CS pins"
+	default n
+
+config AMEBAD_SPI_EXCHANGE
+	bool "Enable AMEBAD SPI EXCHANGE"
+	default y
+
+config AMEBAD_SPI_DMA
+	bool "Enable AMEBAD SPI DMA"
+	default n
+	
+config AMEBAD_SPI_CMDDATA
+	bool "Enable AMEBAD SPI CMDDATA"
+	default y
+endif
+
 endmenu
 
 menu "Realtek RTL8721D WIFI Support"
@@ -58,9 +133,7 @@ menu "Realtek RTL8721D WIFI Support"
 config AMEBAD_WIFI
 	bool "Enable Amebad WIFI"
 	default n
-
 endmenu
-
 menu "Realtek RTL8721D BLE Support"
 
 config AMEBAD_BLE
@@ -71,6 +144,10 @@ config AMEBAD_BLE
 if AMEBAD_BLE
 config FTL_ENABLED
 	bool "Enable FTL"
+	default n
+
+config BLE_INDICATION
+	bool "Enable BLE Indication Blocking Mode"
 	default n
 
 config AMEBAD_BLE_DEBUG
@@ -118,5 +195,13 @@ config AMEBAD_RDP_KEY
 	default 0x2473040ab47c48655a15aa431c4bbb8a
 	range 00000000000000000000000000000000 ffffffffffffffffffffffffffffffff
 	depends on AMEBAD_RDP
+
+endmenu
+
+menu "Realtek RTL8721D CMSIS_NN Support"
+
+config AMEBAD_CMSIS_NN
+	bool "Enable Amebad CMSIS_NN"
+	default n
 
 endmenu

@@ -66,29 +66,17 @@
 #include <tinyara/arch.h>
 #include <arch/irq.h>
 
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+#include <tinyara/mm/mm.h>
+#endif
+
 #include "up_vfork.h"
+#include "up_internal.h"
 #include "sched/sched.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-/* ARM requires at least a 4-byte stack alignment.  For use with EABI and
- * floating point, the stack must be aligned to 8-byte addresses.
- */
-
-#ifndef CONFIG_STACK_ALIGNMENT
-
-/* The symbol  __ARM_EABI__ is defined by GCC if EABI is being used.  If you
- * are not using GCC, make sure that CONFIG_STACK_ALIGNMENT is set correctly!
- */
-
-#ifdef __ARM_EABI__
-#define CONFIG_STACK_ALIGNMENT 8
-#else
-#define CONFIG_STACK_ALIGNMENT 4
-#endif
-#endif
 
 /****************************************************************************
  * Private Functions
@@ -171,7 +159,7 @@ pid_t up_vfork(const struct vfork_s *context)
 	 * requested.
 	 */
 
-	stacksize = parent->adj_stack_size + CONFIG_STACK_ALIGNMENT - 1;
+	stacksize = parent->adj_stack_size + STACK_ALIGNMENT - 1;
 
 	/* Allocate the stack for the TCB */
 
@@ -181,6 +169,15 @@ pid_t up_vfork(const struct vfork_s *context)
 		task_vforkabort(child, -ret);
 		return (pid_t)ERROR;
 	}
+
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	/* Exclude a stack node from heap usages of current thread.
+	 * This will be shown separately as stack usages.
+	 */
+	heapinfo_exclude_stacksize(child->cmn.stack_alloc_ptr);
+	/* Update the pid information to set a stack node */
+	heapinfo_set_stack_node(child->cmn.stack_alloc_ptr, child->cmn.pid);
+#endif
 
 	/* How much of the parent's stack was utilized?  The ARM uses
 	 * a push-down stack so that the current stack pointer should
@@ -257,7 +254,7 @@ pid_t up_vfork(const struct vfork_s *context)
 #endif
 #elif defined(CONFIG_ARCH_CORTEXM3) || defined(CONFIG_ARCH_CORTEXM4) || \
 	  defined(CONFIG_ARCH_CORTEXM0) || defined(CONFIG_ARCH_CORTEXM7) || \
-	  defined(CONFIG_ARCH_CORTEXM33)
+	  defined(CONFIG_ARCH_CORTEXM33) || defined(CONFIG_ARCH_CORTEXM55)
 
 			child->cmn.xcp.syscall[index].excreturn = parent->xcp.syscall[index].excreturn;
 #else

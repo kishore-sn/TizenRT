@@ -135,7 +135,7 @@ TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libaudio$(LIBEXT)
 endif
 
 # Add libraries for the Compression sub-system
-ifeq ($(CONFIG_COMPRESSED_BINARY),y)
+ifeq ($(CONFIG_COMPRESSION),y)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcompression$(LIBEXT)
 endif
 
@@ -159,37 +159,6 @@ TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libiotjs$(LIBEXT)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libjerry-core$(LIBEXT)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libtuv$(LIBEXT)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libjerry-libm$(LIBEXT)
-endif
-
-# Add library for external bcm support.
-# External WICED Lib builds
-ifeq ($(CONFIG_WL_BCM4390X),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libbcmexternal$(LIBEXT)
-endif
-
-ifeq ($(CONFIG_RTK_WLAN),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)librtl$(LIBEXT)
-endif
-
-ifeq ($(CONFIG_AMEBAD_WIFI),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)lib_wlan$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)lib_wps$(LIBEXT)
-endif
-
-# Add library for external esp32 wifi support.
-ifeq ($(CONFIG_ESP32_WIFI_SUPPORT),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcore$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)librtc$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libnet80211$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libpp$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libwpa$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libsmartconfig$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcoexist$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libwps$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libwpa2$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libespnow$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libphy$(LIBEXT)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libmesh$(LIBEXT)
 endif
 
 # Export all libraries

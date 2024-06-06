@@ -183,8 +183,8 @@ static __inline _list *get_list_head(_queue *queue)
 
 #define TIMER_MAX_DELAY				0xFFFFFFFF
 
-void save_and_cli(void);
-void restore_flags(void);
+unsigned int save_and_cli(void);
+void restore_flags(unsigned int flag);
 void cli(void);
 
 #ifndef mdelay
@@ -311,6 +311,9 @@ extern void rtw_list_insert_tail(_list *plist, _list *phead);
 extern void rtw_list_delete(_list *plist);
 
 extern int rtw_if_wifi_thread(char *name);
+
+int rtw_printf(const char *format,...);
+int rtw_printf_info(const char *format,...);
 
 #if (defined CONFIG_PLATFORM_8711B) || (defined CONFIG_PLATFORM_8721D)
 extern u32 random_seed;

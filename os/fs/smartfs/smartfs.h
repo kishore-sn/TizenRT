@@ -175,7 +175,7 @@
 #define INODE_STATE_FILE          (CONFIG_NXFFS_ERASEDSTATE ^ 0x22)
 #define INODE_STATE_DELETED       (CONFIG_NXFFS_ERASEDSTATE ^ 0xaa)
 
-/* Smartfs worbuffer maxuimum length */
+/* Smartfs workbuffer maximum length */
 
 #define SMARTFS_MAX_WORKBUFFER_LEN 256
 
@@ -191,8 +191,9 @@
 #define SMARTFS_DIRENT_TYPE_DIR   0x2000
 #define SMARTFS_DIRENT_TYPE_FILE  0x0000
 
-/* Number of bytes in the SMART magic sequences */
+#define SMARTFS_DIRENT_LEN_UNKWN  0xFFFFFFFF	/* Signifies that the length of the openend file is not calculated yet */
 
+/* Number of bytes in the SMART magic sequences */
 #define SMART_MAGICSIZE           4
 
 /* Quasi-standard definitions */
@@ -377,6 +378,8 @@ struct smartfs_mountpt_s;
 int smartfs_mount(struct smartfs_mountpt_s *fs, bool writeable);
 
 int smartfs_unmount(struct smartfs_mountpt_s *fs);
+
+int smartfs_get_datalen(struct smartfs_mountpt_s *fs, uint16_t firstsector, uint32_t *datalen);
 
 int smartfs_finddirentry(struct smartfs_mountpt_s *fs, struct smartfs_entry_s *direntry, const char *relpath);
 

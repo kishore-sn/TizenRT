@@ -66,6 +66,7 @@
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+#ifndef CONFIG_APP_BINARY_SEPARATION
 /************************************************************************
  * Name: calloc_at
  *
@@ -82,16 +83,32 @@
 #if CONFIG_KMM_NHEAPS > 1
 void *calloc_at(int heap_index, size_t n, size_t elem_size)
 {
-	if (heap_index >= CONFIG_KMM_NHEAPS || heap_index < 0) {
-		mdbg("calloc_at failed. Wrong heap index (%d) of (%d)\n", heap_index, CONFIG_KMM_NHEAPS);
+	void *ret;
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	size_t caller_retaddr = 0;
+	ARCH_GET_RET_ADDRESS(caller_retaddr)
+#endif
+	if (heap_index > HEAP_END_IDX || heap_index < 0) {
+		mdbg("calloc_at failed. Wrong heap index (%d) of (%d)\n", heap_index, HEAP_END_IDX);
 		return NULL;
 	}
+
+	if (n == 0 || elem_size == 0) {
+		return NULL;
+	}
+	ret = mm_calloc(&BASE_HEAP[heap_index], n, elem_size
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	ARCH_GET_RET_ADDRESS
-	return mm_calloc(&BASE_HEAP[heap_index], n, elem_size, retaddr);
-#else
-	return mm_calloc(&BASE_HEAP[heap_index], n, elem_size);
+			, caller_retaddr
 #endif
+			);
+	if (ret == NULL) {
+		mm_manage_alloc_fail(&BASE_HEAP[heap_index], heap_index, heap_index, n * elem_size, USER_HEAP
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+				, caller_retaddr
+#endif
+				);
+	}
+	return ret;
 }
 #endif
 
@@ -106,29 +123,34 @@ void *calloc_at(int heap_index, size_t n, size_t elem_size)
  *   elem_size - Size (in bytes) of each element.
  *   s     - Start index
  *   e     - End index
- *   retaddr - caller function return address, used only for DEBUG_MM_HEAPINFO
+ *   caller_retaddr - caller function return address, used only for DEBUG_MM_HEAPINFO
  * Return Value:
  *   The address of the allocated memory (NULL on failure to allocate)
  *
  ************************************************************************/
-static void *heap_calloc(size_t n, size_t elem_size, int s, int e, size_t retaddr)
+static void *heap_calloc(size_t n, size_t elem_size, int s, int e, size_t caller_retaddr)
 {
 	int heap_idx;
 	void *ret;
 
-	for (heap_idx = s; heap_idx < e; heap_idx++) {
+	for (heap_idx = s; heap_idx <= e; heap_idx++) {
+		ret = mm_calloc(&BASE_HEAP[heap_idx], n, elem_size
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-		ret = mm_calloc(&BASE_HEAP[heap_idx], n, elem_size, retaddr);
-#else
-		ret = mm_calloc(&BASE_HEAP[heap_idx], n, elem_size);
+				, caller_retaddr
 #endif
+				);
 		if (ret != NULL) {
 			return ret;
 		}
 	}
-
+	mm_manage_alloc_fail(BASE_HEAP, s, e, n * elem_size, USER_HEAP
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+			, caller_retaddr
+#endif
+			);
 	return NULL;
 }
+#endif
 
 /****************************************************************************
  * Name: calloc
@@ -140,28 +162,49 @@ static void *heap_calloc(size_t n, size_t elem_size, int s, int e, size_t retadd
 
 FAR void *calloc(size_t n, size_t elem_size)
 {
-	int heap_idx = 0;
 	void *ret = NULL;
+	size_t caller_retaddr = 0;
+
+	if (n == 0 || elem_size == 0) {
+		return NULL;
+	}
 
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	ARCH_GET_RET_ADDRESS
-#else
-	size_t retaddr = 0;
+	ARCH_GET_RET_ADDRESS(caller_retaddr)
 #endif
 
+#ifdef CONFIG_APP_BINARY_SEPARATION
+	/* User supports a single heap on app separation */
+	ret = mm_calloc(BASE_HEAP, n, elem_size
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+			, caller_retaddr
+#endif
+			);
+	if (ret == NULL) {
+		mm_manage_alloc_fail(BASE_HEAP, HEAP_START_IDX, HEAP_END_IDX, n * elem_size, USER_HEAP
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+				, caller_retaddr
+#endif
+				);
+	}
+
+#else /* CONFIG_APP_BINARY_SEPARATION */
+
+	int heap_idx = HEAP_START_IDX;
 #ifdef CONFIG_RAM_MALLOC_PRIOR_INDEX
 	heap_idx = CONFIG_RAM_MALLOC_PRIOR_INDEX;
 #endif
-
-	ret = heap_calloc(n, elem_size, heap_idx, CONFIG_KMM_NHEAPS, retaddr);
+	ret = heap_calloc(n, elem_size, heap_idx, HEAP_END_IDX, caller_retaddr);
 	if (ret != NULL) {
 		return ret;
 	}
 
 #if (defined(CONFIG_RAM_MALLOC_PRIOR_INDEX) && CONFIG_RAM_MALLOC_PRIOR_INDEX > 0)
 	/* Try to mm_calloc to other heaps */
-	ret = heap_calloc(n, elem_size, 0, CONFIG_RAM_MALLOC_PRIOR_INDEX, retaddr);
+	ret = heap_calloc(n, elem_size, HEAP_START_IDX, CONFIG_RAM_MALLOC_PRIOR_INDEX - 1, caller_retaddr);
 #endif
+
+#endif  /* CONFIG_APP_BINARY_SEPARATION */
 
 	return ret;
 }

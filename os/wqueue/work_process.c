@@ -68,7 +68,6 @@
 
 #include "wqueue.h"
 
-
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -84,6 +83,11 @@
 /****************************************************************************
  * Private Data
  ****************************************************************************/
+#if defined(CONFIG_DEBUG_WORKQUEUE)
+#if defined(CONFIG_BUILD_FLAT) || (defined(CONFIG_BUILD_PROTECTED) && defined(__KERNEL__))
+static worker_t cur_worker;
+#endif
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -92,6 +96,14 @@
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+#if defined(CONFIG_DEBUG_WORKQUEUE)
+#if defined(CONFIG_BUILD_FLAT) || (defined(CONFIG_BUILD_PROTECTED) && defined(__KERNEL__))
+worker_t work_get_current(void)
+{
+	return cur_worker;
+}
+#endif
+#endif
 
 /****************************************************************************
  * Name: work_process
@@ -128,7 +140,7 @@ void work_process(FAR struct wqueue_s *wqueue, int wndx)
 	while (work_lock() < 0);
 #else
 	irqstate_t flags;
-	flags = irqsave();
+	flags = enter_critical_section();
 #endif
 
 
@@ -181,7 +193,12 @@ void work_process(FAR struct wqueue_s *wqueue, int wndx)
 #if defined(CONFIG_SCHED_USRWORK) && !defined(__KERNEL__)
 				work_unlock();
 #else
-				irqrestore(flags);
+				leave_critical_section(flags);
+#endif
+#if defined(CONFIG_DEBUG_WORKQUEUE)
+#if defined(CONFIG_BUILD_FLAT) || (defined(CONFIG_BUILD_PROTECTED) && defined(__KERNEL__))
+				cur_worker = worker;
+#endif
 #endif
 				worker(arg);
 
@@ -193,7 +210,7 @@ void work_process(FAR struct wqueue_s *wqueue, int wndx)
 #if defined(CONFIG_SCHED_USRWORK) && !defined(__KERNEL__)
 				while (work_lock() < 0);
 #else
-				flags = irqsave();
+				flags = enter_critical_section();
 #endif
 				work = (FAR struct work_s *)wqueue->q.head;
 			} else {
@@ -241,7 +258,7 @@ void work_process(FAR struct wqueue_s *wqueue, int wndx)
 		work_unlock();
 	}
 #else
-	irqrestore(flags);
+	leave_critical_section(flags);
 #endif
 
 }

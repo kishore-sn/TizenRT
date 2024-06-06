@@ -95,12 +95,12 @@ SRCS		= $(ASRCS) $(CSRCS) $(CXXSRCS)
 OBJS		= $(AOBJS) $(COBJS) $(CXXOBJS)
 
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
-  BIN		= ..\..\libapps$(LIBEXT)
+BIN		= $(APPDIR)\libapps$(LIBEXT)
 else
 ifeq ($(WINTOOL),y)
-  BIN		= ..\\..\\libapps$(LIBEXT)
+  BIN		= $(APPDIR)\\libapps$(LIBEXT)
 else
-  BIN		= ../../libapps$(LIBEXT)
+  BIN		= $(APPDIR)/libapps$(LIBEXT)
 endif
 endif
 
@@ -183,7 +183,7 @@ ifeq ($(CONFIG_EXAMPLES_TESTCASE_MQTT_ITC),y)
 	$(Q) $(call REGISTER,mqtt_itc,itc_mqtt_main,TASH_EXECMD_ASYNC,100,4096)
 endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_NETWORK),y)
-	$(Q) $(call REGISTER,network_tc,tc_network_main,TASH_EXECMD_ASYNC,100,2048)
+	$(Q) $(call REGISTER,network_tc,tc_network_main,TASH_EXECMD_ASYNC,100,4096)
 endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_PREFERENCE_UTC),y)
 	$(Q) $(call REGISTER,preference_utc,utc_preference_main,TASH_EXECMD_ASYNC,100,2048)
@@ -216,6 +216,12 @@ ifeq ($(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC),y)
 endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_ITC),y)
 	$(Q) $(call REGISTER,wifimgr_itc,itc_wifimanager_main,TASH_EXECMD_ASYNC,100,4096)
+endif
+ifeq ($(CONFIG_EXAMPLES_TESTCASE_BLE_MANAGER_UTC),y)
+	$(Q) $(call REGISTER,blemgr_utc,utc_blemanager_main,TASH_EXECMD_ASYNC,100,4096)
+endif
+ifeq ($(CONFIG_EXAMPLES_TESTCASE_BLE_MANAGER_ITC),y)
+	$(Q) $(call REGISTER,blemgr_itc,itc_blemanager_main,TASH_EXECMD_ASYNC,100,4096)
 endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_TCP_TLS_STRESS),y)
 	$(Q) $(call REGISTER,tcp_tls_stress,tc_tcp_tls_main,TASH_EXECMD_ASYNC,100,8192)

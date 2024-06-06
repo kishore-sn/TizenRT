@@ -25,7 +25,8 @@ aliases:
 
 jobs:
   checkout_code:
-    machine: true
+    machine: 
+      image: default
     working_directory: ~/TizenRT
     steps:
       - checkout
@@ -35,16 +36,8 @@ jobs:
             - ./
             
   artik055s/audio:
-    machine: true
-    working_directory: ~/TizenRT
-    steps:
-      - attach_workspace:
-          at: ~/TizenRT
-      - *docker-cp
-      - *build-job
-
-  artik053/st_things:
-    machine: true
+    machine:
+      image: default
     working_directory: ~/TizenRT
     steps:
       - attach_workspace:
@@ -53,7 +46,8 @@ jobs:
       - *build-job
 
   artik053/tc:
-    machine: true
+    machine:
+      image: default
     working_directory: ~/TizenRT
     steps:
       - attach_workspace:
@@ -62,7 +56,8 @@ jobs:
       - *build-job
 
   qemu/build_test:
-    machine: true
+    machine:
+      image: default
     working_directory: ~/TizenRT
     steps:
       - attach_workspace:
@@ -71,7 +66,8 @@ jobs:
       - *build-job
 
   esp_wrover_kit/hello_with_tash:
-    machine: true
+    machine:
+      image: default
     working_directory: ~/TizenRT
     steps:
       - attach_workspace:
@@ -80,7 +76,18 @@ jobs:
       - *build-job
 
   imxrt1020-evk/loadable_elf_apps:
-    machine: true
+    machine:
+      image: default
+    working_directory: ~/TizenRT
+    steps:
+      - attach_workspace:
+          at: ~/TizenRT
+      - *docker-cp
+      - *build-job
+
+  rtl8721csm/hello:
+    machine:
+      image: default
     working_directory: ~/TizenRT
     steps:
       - attach_workspace:
@@ -89,7 +96,58 @@ jobs:
       - *build-job
 
   rtl8721csm/loadable_apps:
-    machine: true
+    machine:
+      image: default
+    working_directory: ~/TizenRT
+    steps:
+      - attach_workspace:
+          at: ~/TizenRT
+      - *docker-cp
+      - *build-job
+
+  rtl8720e/hello:
+    machine:
+      image: default
+    working_directory: ~/TizenRT
+    steps:
+      - attach_workspace:
+          at: ~/TizenRT
+      - *docker-cp
+      - *build-job
+
+  rtl8720e/loadable_apps:
+    machine:
+      image: default
+    working_directory: ~/TizenRT
+    steps:
+      - attach_workspace:
+          at: ~/TizenRT
+      - *docker-cp
+      - *build-job
+
+  rtl8730e/flat_apps:
+    machine:
+      image: default
+    working_directory: ~/TizenRT
+    steps:
+      - attach_workspace:
+          at: ~/TizenRT
+      - *docker-cp
+      - *build-job
+
+  rtl8730e/loadable_apps:
+    machine:
+      image: default
+    working_directory: ~/TizenRT
+    steps:
+      - attach_workspace:
+          at: ~/TizenRT
+      - *docker-cp
+      - *build-job
+
+  rtl8730e/flat_dev:
+    machine:
+      image: default
     working_directory: ~/TizenRT
     steps:
       - attach_workspace:
@@ -105,9 +163,6 @@ workflows:
       - artik055s/audio:
           requires:
             - checkout_code
-      - artik053/st_things:
-          requires:
-            - checkout_code
       - artik053/tc:
           requires:
             - checkout_code
@@ -120,6 +175,24 @@ workflows:
       - imxrt1020-evk/loadable_elf_apps:
           requires:
             - checkout_code
+      - rtl8721csm/hello:
+          requires:
+            - checkout_code
       - rtl8721csm/loadable_apps:
+          requires:
+            - checkout_code
+      - rtl8720e/hello:
+          requires:
+            - checkout_code
+      - rtl8720e/loadable_apps:
+          requires:
+            - checkout_code
+      - rtl8730e/flat_apps:
+          requires:
+            - checkout_code
+      - rtl8730e/loadable_apps:
+          requires:
+            - checkout_code
+      - rtl8730e/flat_dev:
           requires:
             - checkout_code

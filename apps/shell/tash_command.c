@@ -36,6 +36,12 @@
 #ifdef CONFIG_SYSTEM_REBOOT_REASON
 #include <tinyara/reboot_reason.h>
 #endif
+#ifdef CONFIG_PM
+#include <tinyara/pm/pm.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#endif
 #include "tash_internal.h"
 
 /****************************************************************************
@@ -55,6 +61,8 @@
 #define TASH_CMDTASK_PRIORITY		(SCHED_PRIORITY_DEFAULT)
 #endif
 #define TASH_CMDS_PER_LINE			(4)
+#define NOT_IN_QUOTES				(0)
+#define IN_QUOTES				(1)
 
 #if TASH_MAX_STORE > 0
 #define CMD_INDEX_UP(x)                                   \
@@ -98,9 +106,6 @@ struct tash_cmd_info_s {
 static int tash_help(int argc, char **args);
 static int tash_clear(int argc, char **args);
 static int tash_exit(int argc, char **args);
-#ifdef CONFIG_TASH_REBOOT
-static int tash_reboot(int argc, char **argv);
-#endif
 #if TASH_MAX_STORE   > 0
 static int tash_history(int argc, char **argv);
 #endif
@@ -433,70 +438,70 @@ int check_exclam_cmd(char *buff)
 
 	/* Find the '!' in the input character */
 
-	while ((exclam_ptr = strchr(buff, ASCII_EXCLAM)) != NULL) {
+	int qc = NOT_IN_QUOTES;		/* Flag to check whether ! is inside quotation mark */
 
-		exclam_nextptr = exclam_ptr + 1;
-		if (*exclam_nextptr == (char)ASCII_SPACE || *exclam_nextptr == (char)ASCII_LF || *exclam_nextptr == (char)ASCII_SEMICOLON || *exclam_nextptr == (char)ASCII_NUL) {
-			/* If the last character in buff is '!', it will be handled as character, not history command. */
+	while (*buff != (char)ASCII_NUL) {
 
-			buff = exclam_nextptr + 1;
+		if (*buff == (char)ASCII_RSQUOTE && qc == NOT_IN_QUOTES) {
+			qc = IN_QUOTES;
+			buff++;
 			continue;
 		}
 
-		/* Get the command from history according to the given index */
-
-		hist_idx = strtol(exclam_nextptr, &buff, 10);
-		if (hist_idx == 0) {
-			/* No number after '!'. */
-
-			printf("!%s: event not found\n", buff);
-			return ERROR;
+		if (*buff == (char)ASCII_RSQUOTE && qc == IN_QUOTES) {
+			qc = NOT_IN_QUOTES;
+			buff++;
+			continue;
 		}
 
-		histcmd_ptr = tash_get_cmd_from_history(hist_idx);
-		if (!histcmd_ptr) {
-			/* No command, Let's finish */
+		if (*buff == (char)ASCII_EXCLAM && qc == NOT_IN_QUOTES) {
 
-			return ERROR;
-		} else {
-			histcmd_size = strlen(histcmd_ptr);
-			if (histcmd_size != (int)(buff - exclam_ptr)) {
-				/* "!number" does not have the same size as the command from the history list.
-				 * Let's adjust the location of next string to replace "!number" to real command string.
-				 */
+			exclam_ptr = buff;
+			exclam_nextptr = exclam_ptr + 1;
+			if (*exclam_nextptr == (char)ASCII_SPACE || *exclam_nextptr == (char)ASCII_LF || *exclam_nextptr == (char)ASCII_SEMICOLON || *exclam_nextptr == (char)ASCII_NUL) {
+				/* If the last character in buff is '!', it will be handled as character, not history command. */
 
-				memmove(exclam_ptr + histcmd_size, buff, strlen(buff));
-				buff = exclam_ptr + histcmd_size;
+				buff = exclam_nextptr + 1;
+				continue;
 			}
-			/* Replace "!number" to real command string in buff */
 
-			strncpy(exclam_ptr, histcmd_ptr, histcmd_size);
+			/* Get the command from history according to the given index */
+
+			hist_idx = strtol(exclam_nextptr, &buff, 10);
+			if (hist_idx == 0) {
+				/* No number after '!'. */
+
+				printf("!%s: event not found\n", buff);
+				return ERROR;
+			}
+
+			histcmd_ptr = tash_get_cmd_from_history(hist_idx);
+			if (!histcmd_ptr) {
+				/* No command, Let's finish */
+
+				return ERROR;
+			} else {
+				histcmd_size = strlen(histcmd_ptr);
+				if (histcmd_size != (int)(buff - exclam_ptr)) {
+					/* "!number" does not have the same size as the command from the history list.
+					 * Let's adjust the location of next string to replace "!number" to real command string.
+					 */
+
+					memmove(exclam_ptr + histcmd_size, buff, strlen(buff));
+					buff = exclam_ptr + histcmd_size;
+				}
+				/* Replace "!number" to real command string in buff */
+
+				strncpy(exclam_ptr, histcmd_ptr, histcmd_size);
+			}
 		}
+
+		buff++;
 	}
+
 	return OK;
 }
 #endif
-
-#ifdef CONFIG_TASH_REBOOT
-static int tash_reboot(int argc, char **argv)
-{
-	/*
-	 * Invoke the BOARDIOC_RESET board control to reset the board. If
-	 * the board_reset() function returns, then it was not possible to
-	 * reset the board due to some constraints.
-	 */
-#ifdef CONFIG_SYSTEM_REBOOT_REASON
-	WRITE_REBOOT_REASON(REBOOT_SYSTEM_USER_INTENDED);
-#endif
-	boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
-
-	/*
-	 * boarctl() will not return in this case.  It if does, it means that
-	 * there was a problem with the reset operaion.
-	 */
-	return ERROR;
-}
-#endif /* CONFIG_TASH_REBOOT */
 
 /** @brief Launch a task to run tash cmd asynchronously
  *  @ingroup tash
@@ -539,6 +544,10 @@ int tash_execute_cmd(char **args, int argc)
 {
 	int cmd_idx;
 	int cmd_found = 0;
+#ifdef CONFIG_PM
+	int pmdrv_fd;
+	int pm_suspended;
+#endif
 
 	/* lock mutex */
 	pthread_mutex_lock(&tash_cmds_info.tmutex);
@@ -551,7 +560,29 @@ int tash_execute_cmd(char **args, int argc)
 
 			if (tash_cmds_info.cmd[cmd_idx].exec_type == TASH_EXECMD_SYNC) {
 				/* function call to execute SYNC command */
+#ifdef CONFIG_PM
+				pmdrv_fd = open("/dev/pm", O_WRONLY);
+				if (pmdrv_fd < 0) {
+					shdbg("open /dev/pm failed(%d), \n", get_errno());
+				} else {
+					pm_suspended = ioctl(pmdrv_fd, PMIOC_SUSPEND, PM_NORMAL);
+					if (pm_suspended != OK) {
+						shdbg("pm_suspend failed(%d)\n", get_errno());
+					}
+				}
+#endif
 				(*tash_cmds_info.cmd[cmd_idx].cb) (argc, args);
+#ifdef CONFIG_PM
+				if (pmdrv_fd > 0) {
+					if (pm_suspended == OK) {
+						/* pm_resume should only be called when the pm_suspend is executed correctly. */
+						if (ioctl(pmdrv_fd, PMIOC_RESUME, PM_NORMAL) != OK) {
+							shdbg("pm_resume failed(%d)\n", get_errno());
+						}
+					}
+					close(pmdrv_fd);
+				}
+#endif
 			} else if (tash_cmds_info.cmd[cmd_idx].exec_type == TASH_EXECMD_ASYNC) {
 				/* launch a task to execute ASYNC command */
 				if (tash_launch_cmdtask(tash_cmds_info.cmd[cmd_idx].cb, argc, args)) {
@@ -781,3 +812,24 @@ int tash_get_cmdpair(char *str, TASH_CMD_CALLBACK *cb, int index)
 	return ret;
 }
 #endif
+
+#ifdef CONFIG_TASH_REBOOT
+int tash_reboot(int argc, char **argv)
+{
+	/*
+	 * Invoke the BOARDIOC_RESET board control to reset the board. If
+	 * the board_reset() function returns, then it was not possible to
+	 * reset the board due to some constraints.
+	 */
+#ifdef CONFIG_SYSTEM_REBOOT_REASON
+	WRITE_REBOOT_REASON(REBOOT_SYSTEM_USER_INTENDED);
+#endif
+	boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
+
+	/*
+	 * boarctl() will not return in this case.  It if does, it means that
+	 * there was a problem with the reset operaion.
+	 */
+	return ERROR;
+}
+#endif /* CONFIG_TASH_REBOOT */

@@ -120,6 +120,7 @@ int main(int argc, char **argv, char **envp)
 	printf("/* The correct way to disable RR scheduling is to set the\n");
 	printf(" * timeslice to zero.\n");
 	printf(" */\n\n");
+	printf("#define CONFIG_RAM_END (CONFIG_RAM_START + CONFIG_RAM_SIZE)\n\n");
 	printf("#ifndef CONFIG_RR_INTERVAL\n");
 	printf("# define CONFIG_RR_INTERVAL 0\n");
 	printf("#endif\n\n");
@@ -206,8 +207,8 @@ int main(int argc, char **argv, char **envp)
 	printf("/* If the end of FLASH is not specified then it is assumed to be the beginning\n");
 	printf(" * of FLASH plus the FLASH size.\n");
 	printf(" */\n\n");
-	printf("#ifndef CONFIG_FLASH_END\n");
-	printf("#define CONFIG_FLASH_END (CONFIG_FLASH_START + CONFIG_FLASH_SIZE)\n");
+	printf("#ifndef CONFIG_FLASH_END_ADDR\n");
+	printf("#define CONFIG_FLASH_END_ADDR (CONFIG_FLASH_START_ADDR + CONFIG_FLASH_SIZE)\n");
 	printf("#endif\n\n");
 	printf("/* If no file streams are configured, then make certain that buffered I/O\n");
 	printf(" * support is disabled\n");
@@ -297,6 +298,9 @@ int main(int argc, char **argv, char **envp)
 	printf("    (CONFIG_MPU_STACK_GUARD_SIZE != 1024) \n");
 	printf("#  define CONFIG_MPU_STACK_GUARD_SIZE 32\n");
 	printf("# endif\n");
+	printf("#endif\n\n");
+	printf("#ifndef CONFIG_SMP_NCPUS\n");
+	printf("#  define CONFIG_SMP_NCPUS 1\n");
 	printf("#endif\n\n");
 	printf("#endif /* __INCLUDE_CONFIG_H */\n");
 	fclose(stream);

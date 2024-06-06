@@ -61,22 +61,13 @@
 
 #include <tinyara/arch.h>
 #include <tinyara/kmalloc.h>
-#ifdef CONFIG_APP_BINARY_SEPARATION
 #include <tinyara/mm/mm.h>
-#endif
-#include <tinyara/mpu.h>
 #include "libelf.h"
+#include "binfmt_arch_apis.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-#ifndef CONFIG_HEAP_INDEX_LOADED_APP
-#define CONFIG_HEAP_INDEX_LOADED_APP 0
-#endif
-
-#if CONFIG_HEAP_INDEX_LOADED_APP >= CONFIG_KMM_NHEAPS
-#error "Heap index for loading apps must be less than total number of heaps"
-#endif
 
 /****************************************************************************
  * Private Constant Data
@@ -88,8 +79,8 @@
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
 static int allocateregions(FAR struct elf_loadinfo_s *loadinfo)
 {
-	size_t sizes[MPU_NUM_REGIONS] = {loadinfo->textsize, loadinfo->rosize, loadinfo->binp->ramsize};
-	uintptr_t *allocs[MPU_NUM_REGIONS] = {&loadinfo->textalloc, &loadinfo->roalloc, &loadinfo->dataalloc};
+	size_t sizes[NUM_APP_REGIONS] = {loadinfo->binp->sizes[BIN_TEXT], loadinfo->binp->sizes[BIN_RO], loadinfo->binp->ramsize};
+	uintptr_t *allocs[NUM_APP_REGIONS] = {&loadinfo->binp->sections[BIN_TEXT], &loadinfo->binp->sections[BIN_RO], &loadinfo->binp->sections[BIN_DATA]};
 	int count = 0;
 	int i;
 	for (i = 0; i < CONFIG_KMM_REGIONS; i++) {
@@ -102,18 +93,14 @@ static int allocateregions(FAR struct elf_loadinfo_s *loadinfo)
 		ASSERT(0);
 	}
 
-#ifdef CONFIG_BINFMT_SECTION_UNIFIED_MEMORY
-	/* If there are size and address alignment restrictions like ARMV7M,
-	 * it is better to allocate one big memory chunk enough to contain each loading sections like text, ro, data.
-	 */
-
+#if defined(CONFIG_BINFMT_SECTION_UNIFIED_MEMORY)
 	uint32_t totalsize = sizes[0] + sizes[1] + sizes[2];
 	size_t tmpsz;
 	uintptr_t *tmpalloc;
 	uint8_t j;
 
-	for (i = 0; i < MPU_NUM_REGIONS; i++) {
-		for (j = 0; j < MPU_NUM_REGIONS - (i + 1); j++) {
+	for (i = 0; i < NUM_APP_REGIONS; i++) {
+		for (j = 0; j < NUM_APP_REGIONS - (i + 1); j++) {
 			if (sizes[j] < sizes[j + 1]) {
 				tmpsz = sizes[j];
 				sizes[j] = sizes[j + 1];
@@ -126,20 +113,7 @@ static int allocateregions(FAR struct elf_loadinfo_s *loadinfo)
 		}
 	}
 
-#ifdef CONFIG_ARMV7M_MPU
-	/* ARMV7M requires addresses to be aligned to the size of the region.
-	 * In this case, we align the first region to the size of first region.
-	 * Since the regions are arranged in descending order of sizes and each
-	 * region size is a power of two, the remaining regions will also be
-	 * aligned to their size.
-	 */
-	*allocs[0] = (uintptr_t)kmm_memalign_at(CONFIG_HEAP_INDEX_LOADED_APP, sizes[0], totalsize);
-#elif CONFIG_ARMV8M_MPU
-	/* ARMV8M requires addresses to be aligned to the power of two. */
-	*allocs[0] = (uintptr_t)kmm_memalign_at(CONFIG_HEAP_INDEX_LOADED_APP, MPU_ALIGNMENT_BYTES, totalsize);
-#else
-#error "Unknown MPU version. Expected either ARMV7M or ARMV8M"
-#endif
+	*allocs[0] = (uintptr_t)binfmt_arch_allocate_section(totalsize);
 	if (*allocs[0] == (uintptr_t)NULL) {
 		return -ENOMEM;
 	}
@@ -148,18 +122,9 @@ static int allocateregions(FAR struct elf_loadinfo_s *loadinfo)
 	*allocs[2] = *allocs[1] + sizes[1];
 
 #else
-	/* There is no restriction about address alignment in MPU,
-	 * Allocate each loading section respectively.
-	 */
 	int region_idx;
-	for (region_idx = 0; region_idx < MPU_NUM_REGIONS; region_idx++) {
-#ifdef CONFIG_ARMV7M_MPU
-		*allocs[region_idx] = (uintptr_t)kmm_memalign_at(CONFIG_HEAP_INDEX_LOADED_APP, sizes[region_idx], sizes[region_idx]);
-#elif CONFIG_ARMV8M_MPU
-		*allocs[region_idx] = (uintptr_t)kmm_memalign_at(CONFIG_HEAP_INDEX_LOADED_APP, MPU_ALIGNMENT_BYTES, sizes[region_idx]);
-#else
-#error "Unknown MPU version. Expected either ARMV7M or ARMV8M"
-#endif
+	for (region_idx = 0; region_idx < NUM_APP_REGIONS; region_idx++) {
+		*allocs[region_idx] = (uintptr_t)binfmt_arch_allocate_section(sizes[region_idx]);
 		if (*allocs[region_idx] == (uintptr_t)NULL) {
 			return -ENOMEM;
 		}
@@ -172,157 +137,88 @@ static int allocateregions(FAR struct elf_loadinfo_s *loadinfo)
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
-#ifdef CONFIG_ARM_MPU
-uint8_t mpu_log2regionceil(uintptr_t base, size_t size);
-#endif
 
 /****************************************************************************
  * Name: elf_addrenv_alloc
  *
  * Description:
- *   Allocate memory for the ELF image (textalloc and dataalloc). If
- *   CONFIG_ARCH_ADDRENV=n, textalloc will be allocated using kmm_zalloc() and
- *   dataalloc will be a offset from textalloc.  If CONFIG_ARCH_ADDRENV-y, then
- *   textalloc and dataalloc will be allocated using up_addrenv_create().  In
- *   either case, there will be a unique instance of textalloc and dataalloc
- *   (and stack) for each instance of a process.
+ *   Allocate memory for the ELF sections.
  *
  * Input Parameters:
  *   loadinfo - Load state information
- *   textsize - The size (in bytes) of the .text address environment needed
- *     for the ELF image (read/execute).
- *   datasize - The size (in bytes) of the .bss/.data address environment
- *     needed for the ELF image (read/write).
- *   heapsize - The initial size (in bytes) of the heap address environment
- *     needed by the task.  This region may be read/write only.
  *
  * Returned Value:
  *   Zero (OK) on success; a negated errno value on failure.
  *
  ****************************************************************************/
 
-int elf_addrenv_alloc(FAR struct elf_loadinfo_s *loadinfo, size_t textsize, size_t datasize, size_t heapsize)
+int elf_addrenv_alloc(FAR struct elf_loadinfo_s *loadinfo)
 {
-#ifdef CONFIG_ARCH_ADDRENV
-	FAR void *vtext;
-	FAR void *vdata;
-	int ret;
-
-	/* Create an address environment for the new ELF task */
-
-	ret = up_addrenv_create(textsize, datasize, heapsize, &loadinfo->addrenv);
-	if (ret < 0) {
-		berr("ERROR: up_addrenv_create failed: %d\n", ret);
-		return ret;
-	}
-
-	/* Get the virtual address associated with the start of the address
-	 * environment.  This is the base address that we will need to use to
-	 * access the ELF image (but only if the address environment has been
-	 * selected.
-	 */
-
-	ret = up_addrenv_vtext(&loadinfo->addrenv, &vtext);
-	if (ret < 0) {
-		berr("ERROR: up_addrenv_vtext failed: %d\n", ret);
-		return ret;
-	}
-
-	ret = up_addrenv_vdata(&loadinfo->addrenv, textsize, &vdata);
-	if (ret < 0) {
-		berr("ERROR: up_addrenv_vdata failed: %d\n", ret);
-		return ret;
-	}
-
-	loadinfo->textalloc = (uintptr_t) vtext;
-	loadinfo->dataalloc = (uintptr_t) vdata;
-	return OK;
-#else
 	/* Allocate memory to hold the ELF image */
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-	uint32_t datamemsize = loadinfo->datasize + loadinfo->binp->ramsize;
-	uint32_t rosize = loadinfo->rosize;
+	/* Total size allocated for data section should include data, bss and heap */
+	uint32_t datamemsize = loadinfo->binp->sizes[BIN_DATA] + loadinfo->binp->sizes[BIN_BSS] + loadinfo->binp->ramsize;
+	uint32_t rosize = loadinfo->binp->sizes[BIN_RO];
+	loadinfo->binp->sizes[BIN_RO] += loadinfo->binp->sizes[BIN_DATA];
 
-	/* loadinfo->datasize contains the size of both data and bss sections.
-	 * But we need to backup only the data section in the RO region. So,
-	 * we need to extend the rosize by just the data section size only. Hence,
-	 * we are subtracting bsssize from loadinfo->datasize.
-	 */
-	loadinfo->rosize += loadinfo->datasize - loadinfo->binp->bsssize;
-
-#ifdef CONFIG_ARMV7M_MPU
-	/* ARMV7M requires MPU region size to be a power of two */
-	loadinfo->textsize = 1 << mpu_log2regionceil(0, loadinfo->textsize);
-	loadinfo->rosize = 1 << mpu_log2regionceil(0, loadinfo->rosize);
-	datamemsize = 1 << mpu_log2regionceil(0, datamemsize);
+	loadinfo->binp->sizes[BIN_TEXT] = binfmt_arch_align_mem(loadinfo->binp->sizes[BIN_TEXT]);
+	loadinfo->binp->sizes[BIN_RO] = binfmt_arch_align_mem(loadinfo->binp->sizes[BIN_RO]);
+	datamemsize = binfmt_arch_align_mem(datamemsize);
+	
 	loadinfo->binp->ramsize = datamemsize;
-#elif CONFIG_ARMV8M_MPU
-	loadinfo->textsize = MPU_ALIGN_UP(loadinfo->textsize);
-	loadinfo->rosize = MPU_ALIGN_UP(loadinfo->rosize);
-	datamemsize = MPU_ALIGN_UP(datamemsize);
-	loadinfo->binp->ramsize = datamemsize;
-#else
-#error "Unknown MPU version. Expected either ARMV7M or ARMV8M"
-#endif
 
 	if (allocateregions(loadinfo) < 0) {
 		berr("ERROR: failed to allocate memory\n");
 		return -ENOMEM;
 	}
 
-	loadinfo->binp->data_backup = loadinfo->roalloc + rosize;
-	loadinfo->binp->uheap_size = datamemsize - loadinfo->datasize - sizeof(struct mm_heap_s);
+	/* Data section back up will be stored at the end of RO section. Adjust the size accordingly */
+	loadinfo->binp->data_backup = loadinfo->binp->sections[BIN_RO] + rosize;
+	loadinfo->binp->sizes[BIN_HEAP] = datamemsize - loadinfo->binp->sizes[BIN_DATA] - loadinfo->binp->sizes[BIN_BSS] - sizeof(struct mm_heap_s);
 #else
 	/* ramsize may be zero in case of loading library since we dont have header for library */
 	if (loadinfo->binp->ramsize == 0) {
-		loadinfo->binp->ramsize = loadinfo->textsize + loadinfo->datasize;
+		loadinfo->binp->ramsize = loadinfo->binp->sizes[BIN_TEXT] + loadinfo->binp->sizes[BIN_DATA] + loadinfo->binp->sizes[BIN_BSS];
 	}
 
 	/* Allocate the RAM partition to load the app into */
-#ifdef CONFIG_ARMV7M_MPU
-	loadinfo->binp->ramstart = kmm_memalign_at(CONFIG_HEAP_INDEX_LOADED_APP, loadinfo->binp->ramsize, loadinfo->binp->ramsize);
-#elif CONFIG_ARMV8M_MPU
-	loadinfo->binp->ramsize = MPU_ALIGN_UP(loadinfo->binp->ramsize);
-	loadinfo->binp->ramstart = kmm_memalign_at(CONFIG_HEAP_INDEX_LOADED_APP, MPU_ALIGNMENT_BYTES, loadinfo->binp->ramsize);
-#else
-#error "Unknown MPU version. Expected either ARMV7M or ARMV8M"
-#endif
+	loadinfo->binp->ramsize = binfmt_arch_align_mem(loadinfo->binp->ramsize);
+	loadinfo->binp->ramstart = (uint32_t)binfmt_arch_allocate_section(loadinfo->binp->ramsize);
 
 	if (!loadinfo->binp->ramstart) {
 		berr("ERROR: Failed to allocate RAM partition\n");
 		return -ENOMEM;
 	}
 
-	loadinfo->textalloc = loadinfo->binp->ramstart;
-	loadinfo->dataalloc = loadinfo->textalloc + loadinfo->textsize;
-	loadinfo->binp->uheap_size = loadinfo->binp->ramsize - (loadinfo->textsize + loadinfo->datasize) - sizeof(struct mm_heap_s);
+	loadinfo->binp->sections[BIN_TEXT] = loadinfo->binp->ramstart;
+	loadinfo->binp->sections[BIN_DATA] = loadinfo->binp->sections[BIN_TEXT] + loadinfo->binp->sizes[BIN_TEXT];
+	loadinfo->binp->sizes[BIN_HEAP] = loadinfo->binp->ramsize 
+					- (loadinfo->binp->sizes[BIN_TEXT] + loadinfo->binp->sizes[BIN_DATA] + loadinfo->binp->sizes[BIN_BSS]) 
+					- sizeof(struct mm_heap_s);
 #endif
-	loadinfo->binp->heapstart = loadinfo->dataalloc + loadinfo->datasize;
-#else
-	loadinfo->textalloc = (uintptr_t)kumm_malloc(textsize + datasize);
-#endif
-	if (!loadinfo->textalloc) {
-		berr("ERROR: Failed to allocate text section (size = %u)\n", textsize);
+	loadinfo->binp->sections[BIN_HEAP] = loadinfo->binp->sections[BIN_DATA] + loadinfo->binp->sizes[BIN_DATA] + loadinfo->binp->sizes[BIN_BSS];
+
+	loadinfo->binp->sections[BIN_BSS] = loadinfo->binp->sections[BIN_DATA] + loadinfo->binp->sizes[BIN_DATA];
+	memset(loadinfo->binp->sections[BIN_BSS], 0, loadinfo->binp->sizes[BIN_BSS]);
+
+	if (!loadinfo->binp->sections[BIN_TEXT]) {
+		berr("ERROR: Failed to allocate text section (size = %u)\n", loadinfo->binp->sizes[BIN_TEXT]);
 		return -ENOMEM;
 	}
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
-	if (!loadinfo->dataalloc) {
-		berr("ERROR: Failed to allocate data section (size = %u)\n", datasize);
+	if (!loadinfo->binp->sections[BIN_DATA]) {
+		berr("ERROR: Failed to allocate data section (size = %u)\n", loadinfo->binp->ramsize);
 		return -ENOMEM;
 	}
 
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-	if (!loadinfo->roalloc) {
-		berr("ERROR: Failed to allocate ro section (size = %u)\n", loadinfo->rosize);
+	if (!loadinfo->binp->sections[BIN_RO]) {
+		berr("ERROR: Failed to allocate ro section (size = %u)\n", loadinfo->binp->sizes[BIN_RO]);
 		return -ENOMEM;
 	}
 #endif
-#endif
 	return OK;
-#endif
 }
 
 /****************************************************************************
@@ -345,29 +241,18 @@ int elf_addrenv_alloc(FAR struct elf_loadinfo_s *loadinfo, size_t textsize, size
 
 void elf_addrenv_free(FAR struct elf_loadinfo_s *loadinfo)
 {
-#ifdef CONFIG_ARCH_ADDRENV
-	int ret;
-
-	/* Free the address environment */
-
-	ret = up_addrenv_destroy(&loadinfo->addrenv);
-	if (ret < 0) {
-		berr("ERROR: up_addrenv_destroy failed: %d\n", ret);
+	if (loadinfo->binp->sections[BIN_TEXT]) {
+		kmm_free((void *)(loadinfo->binp->sections[BIN_TEXT]));
+		loadinfo->binp->sections[BIN_TEXT] = (int)NULL;
 	}
-#else
-	/* If there is an allocation for the ELF image, free it */
-
-#ifndef CONFIG_APP_BINARY_SEPARATION
-	if (loadinfo->textalloc != 0) {
-		kumm_free((FAR void *)loadinfo->textalloc);
+#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
+	if (loadinfo->binp->sections[BIN_DATA]) {
+		kmm_free((void *)(loadinfo->binp->sections[BIN_DATA]));
+		loadinfo->binp->sections[BIN_DATA] = (int)NULL;
+	}
+	if (loadinfo->binp->sections[BIN_RO]) {
+		kmm_free((void *)(loadinfo->binp->sections[BIN_RO]));
+		loadinfo->binp->sections[BIN_RO] = (int)NULL;
 	}
 #endif
-#endif
-
-	/* Clear out all indications of the allocated address environment */
-
-	loadinfo->textalloc = 0;
-	loadinfo->dataalloc = 0;
-	loadinfo->textsize = 0;
-	loadinfo->datasize = 0;
 }

@@ -73,6 +73,8 @@ endif
 include analog$(DELIM)Make.defs
 include audio$(DELIM)Make.defs
 include bch$(DELIM)Make.defs
+include bluetooth$(DELIM)Make.defs
+include compression$(DELIM)Make.defs
 include cpuload$(DELIM)Make.defs
 include fota$(DELIM)Make.defs
 include gpio$(DELIM)Make.defs
@@ -83,9 +85,11 @@ include iotdev$(DELIM)Make.defs
 include os_api_test$(DELIM)Make.defs
 include lcd$(DELIM)Make.defs
 include lwnl${DELIM}Make.defs
+include mipidsi${DELIM}Make.defs
 include net$(DELIM)Make.defs
 include otp$(DELIM)Make.defs
 include pipes$(DELIM)Make.defs
+include pm$(DELIM)Make.defs
 include power$(DELIM)Make.defs
 include seclink$(DELIM)Make.defs
 include sensors$(DELIM)Make.defs
@@ -135,6 +139,10 @@ endif
 
 ifeq ($(CONFIG_RTC),y)
   CSRCS += rtc.c
+endif
+
+ifeq ($(CONFIG_VIRTKEY),y)
+  CSRCS += virtkey.c
 endif
 endif
 

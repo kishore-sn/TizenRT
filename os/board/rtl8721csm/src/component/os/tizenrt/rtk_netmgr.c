@@ -25,6 +25,8 @@
 #include <tinyara/lwnl/lwnl.h>
 #include <tinyara/net/if/wifi.h>
 #include <tinyara/netmgr/netdev_mgr.h>
+#include "freertos/wrapper.h"
+#include "osdep_service.h"
 /* WLAN CONFIG ---------------------------------------------------------------*/
 #define RTK_OK          0		/*!< RTK_err_t value indicating success (no error) */
 #define RTK_FAIL        -1		/*!< Generic RTK_err_t code indicating failure */
@@ -76,21 +78,113 @@ struct trwifi_ops g_trwifi_drv_ops = {
 	wifi_netmgr_utils_stop_softap,		/* stop_softap */
 	wifi_netmgr_utils_set_autoconnect, /* set_autoconnect */
 	wifi_netmgr_utils_ioctl,					/* drv_ioctl */
+	NULL,	/* scan_multi_ap */
 };
 
 static trwifi_scan_list_s *g_scan_list;
 static int g_scan_num;
 extern struct netdev *ameba_nm_dev_wlan0;
 
+#define SCAN_TIMER_DURATION 180000
+
+struct ap_scan_list {
+	unsigned int channel;
+	char ssid[TRWIFI_SSID_LEN + 1];
+	unsigned int ssid_length;
+	int rssi;
+	trwifi_ap_auth_type_e ap_auth_type;
+	trwifi_ap_crypto_type_e ap_crypto_type;
+};
+typedef struct ap_scan_list ap_scan_list_s;
+
+static ap_scan_list_s *saved_scan_list = NULL;
+static uint32_t scan_number = 0;
+static _timer scan_timer;
+static _mutex scanlistbusy;	//protects shared variables saved_scan_list,scan_number and scan_timer
+
+static void _scan_timer_handler(void *FunctionContext)
+{
+	vddbg("scan Timer expired : release saved scan list\r\n");
+
+	rtw_mutex_get(&scanlistbusy);
+	vddbg("scan Timer expired : sizeof(ap_scan_list_s) =%d, scan_number=%d \r\n", sizeof(ap_scan_list_s), scan_number);
+
+	if (saved_scan_list) {
+		rtw_mfree((unsigned char *)saved_scan_list, sizeof(ap_scan_list_s) * scan_number);
+		saved_scan_list = NULL;
+	}
+	scan_number = 0;
+	rtw_del_timer(&(scan_timer));
+	rtw_mutex_put(&scanlistbusy);
+}
+
+static int save_scan_list(trwifi_scan_list_s *p_scan_list)
+{
+	rtw_mutex_get(&scanlistbusy);
+	// If application calls scan before scan result free(before timeout), release scan list and cancel timer
+	if (scan_number) {
+		if (saved_scan_list) {
+			rtw_mfree((unsigned char *)saved_scan_list, sizeof(ap_scan_list_s) * scan_number);
+			saved_scan_list = NULL;
+		}
+		rtw_cancel_timer(&(scan_timer));
+		vddbg("scan is called before timeout\r\n");
+	} else {
+		rtw_init_timer(&(scan_timer), &(scan_timer), _scan_timer_handler, &(scan_timer), "dynamic_chk_timer");
+		vddbg("Start scan timer\n");
+	}
+
+	rtw_set_timer(&(scan_timer), SCAN_TIMER_DURATION);
+
+	scan_number	 = 0;
+	if(g_scan_num != 0)
+	{
+		saved_scan_list = (ap_scan_list_s *)rtw_malloc(sizeof(ap_scan_list_s) * g_scan_num);
+	}
+	else
+	{
+		if (saved_scan_list) {
+			rtw_mfree((unsigned char *)saved_scan_list, sizeof(ap_scan_list_s) * scan_number);
+			saved_scan_list = NULL;
+		}
+	}
+	if (saved_scan_list == NULL) {
+		if (scan_timer.timer_hdl != NULL) {
+			rtw_cancel_timer(&(scan_timer));
+			rtw_del_timer(&(scan_timer));
+		}
+		rtw_mutex_put(&scanlistbusy);
+		return RTW_NOMEM;
+	}
+
+	while(p_scan_list) {
+		strncpy(saved_scan_list[scan_number].ssid, p_scan_list->ap_info.ssid, p_scan_list->ap_info.ssid_length);
+		saved_scan_list[scan_number].ssid_length = p_scan_list->ap_info.ssid_length;
+		saved_scan_list[scan_number].channel = p_scan_list->ap_info.channel;
+		saved_scan_list[scan_number].rssi = p_scan_list->ap_info.rssi;
+		saved_scan_list[scan_number].ap_auth_type = p_scan_list->ap_info.ap_auth_type;
+		saved_scan_list[scan_number].ap_crypto_type = p_scan_list->ap_info.ap_crypto_type;
+		p_scan_list = p_scan_list->next;
+		scan_number++;
+	}
+
+	if (scan_number != g_scan_num)
+		vddbg("Total scan list temp = %d, g_scan = %d\n", scan_number, g_scan_num);
+	rtw_mutex_put(&scanlistbusy);
+
+	return RTW_SUCCESS;
+}
+
 static void _free_scanlist(void)
 {
 	while (g_scan_list) {
 		trwifi_scan_list_s *cur = g_scan_list;
 		g_scan_list = g_scan_list->next;
-		rtw_mfree(cur, sizeof(trwifi_scan_list_s));
+		rtw_mfree((unsigned char *)cur, sizeof(trwifi_scan_list_s));
 	}
 	g_scan_num = 0;
 }
+
 rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_result)
 {
 	trwifi_scan_list_s *scan_list;
@@ -165,6 +259,9 @@ rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_re
 		case RTW_SECURITY_WPA3_AES_PSK:
 			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA3_PSK;
 			break;
+		case RTW_SECURITY_WPA2_WPA3_MIXED:
+			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_WPA2_AND_WPA3_PSK;
+			break;
 		default:
 			scan_list->ap_info.ap_auth_type = TRWIFI_AUTH_UNKNOWN;
 			break;
@@ -225,6 +322,9 @@ rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_re
 		case RTW_SECURITY_WPA3_AES_PSK:
 			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
 			break;
+		case RTW_SECURITY_WPA2_WPA3_MIXED:
+			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_AES;
+			break;
 		default:
 			scan_list->ap_info.ap_crypto_type = TRWIFI_CRYPTO_UNKNOWN;
 			break;
@@ -244,6 +344,12 @@ rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_re
 		}
 	} else {
 		nvdbg("SCAN DONE: Calling wifi_scan_result_callback\r\n");
+		int res;
+		trwifi_scan_list_s *p_scan_list = g_scan_list;
+
+		res = save_scan_list(p_scan_list);
+		if (res != RTW_SUCCESS)
+			vddbg("\r\nFail to malloc scan_list\r\n");
 		TRWIFI_POST_SCANEVENT(ameba_nm_dev_wlan0, LWNL_EVT_SCAN_DONE, (void *)g_scan_list);
 		_free_scanlist();
 		if (g_scan_list) {
@@ -257,46 +363,50 @@ rtw_result_t app_scan_result_handler(rtw_scan_handler_result_t *malloced_scan_re
 int parse_scan_with_ssid_res(char*buf, int buflen, char *target_ssid, void *user_data)
 {
 	if (rltk_wlan_scan_with_ssid_by_extended_security_is_enable()) {
-			int plen = 0, scan_cnt = 0;
-			rtw_scan_handler_result_t scan_result_report;
-			scan_result_report.scan_complete = RTW_FALSE;
-			scan_result_report.user_data = user_data;
-			while (plen < buflen) {
-				int len;
-				rtw_memset(&scan_result_report.ap_details, 0, sizeof(scan_result_report.ap_details));
-				len = (int)*(buf + plen);
-				if (len == 0) break;
-				scan_result_report.ap_details.SSID.len = len - 1 - 6 - 4 - 4 - 1 - 1;
-				rtw_memcpy(&scan_result_report.ap_details.SSID.val, (buf + plen + 1 + 6 + 4 + 4 + 1 + 1), scan_result_report.ap_details.SSID.len);
-				rtw_memcpy(&scan_result_report.ap_details.BSSID.octet, buf + plen + 1, 6);
-				rtw_memcpy(&scan_result_report.ap_details.signal_strength, buf + plen + 1 + 6, 4);
-				rtw_memcpy(&scan_result_report.ap_details.security, buf + plen + 1 + 6 + 4, 4);
-				scan_result_report.ap_details.wps_type = (int)*(buf + plen + 1 + 6 + 4 + 4);
-				scan_result_report.ap_details.channel = (int)*(buf + plen + 1 + 6 + 4 + 4 + 1);
-				app_scan_result_handler(&scan_result_report);
-				plen += len;
-				scan_cnt++;
-			}
-			//RTW_API_INFO("\n\rwifi_scan: scan count = %d, scan_cnt);
-			rltk_wlan_enable_scan_with_ssid_by_extended_security(0);
-			scan_result_report.scan_complete = RTW_TRUE;
+		int plen = 0, scan_cnt = 0;
+		rtw_scan_handler_result_t scan_result_report;
+		scan_result_report.scan_complete = RTW_FALSE;
+		scan_result_report.user_data = user_data;
+		while (plen < buflen) {
+			int len;
+			rtw_memset(&scan_result_report.ap_details, 0, sizeof(scan_result_report.ap_details));
+			len = (int)*(buf + plen);
+			if (len == 0) break;
+			scan_result_report.ap_details.SSID.len = len - 1 - 6 - 4 - 4 - 1 - 1;
+			rtw_memcpy(&scan_result_report.ap_details.SSID.val, (buf + plen + 1 + 6 + 4 + 4 + 1 + 1), scan_result_report.ap_details.SSID.len);
+			rtw_memcpy(&scan_result_report.ap_details.BSSID.octet, buf + plen + 1, 6);
+			rtw_memcpy(&scan_result_report.ap_details.signal_strength, buf + plen + 1 + 6, 4);
+			rtw_memcpy(&scan_result_report.ap_details.security, buf + plen + 1 + 6 + 4, 4);
+			scan_result_report.ap_details.wps_type = (int)*(buf + plen + 1 + 6 + 4 + 4);
+			scan_result_report.ap_details.channel = (int)*(buf + plen + 1 + 6 + 4 + 4 + 1);
 			app_scan_result_handler(&scan_result_report);
-			return RTW_SUCCESS;
-		} else {
-			RTW_API_INFO("scan_with_ssid_by_extended_security is not enabled\n");
-			return RTW_ERROR;
+			plen += len;
+			scan_cnt++;
 		}
+		//RTW_API_INFO("\n\rwifi_scan: scan count = %d, scan_cnt);
+		scan_result_report.scan_complete = RTW_TRUE;
+		app_scan_result_handler(&scan_result_report);
+		return RTW_SUCCESS;
+	} else {
+		RTW_API_INFO("scan_with_ssid_by_extended_security is not enabled\n");
+		return RTW_ERROR;
+	}
 }
 
 /*
  * Callback
  */
+extern unsigned char ap_bssid[ETH_ALEN];
 static int rtk_drv_callback_handler(int type)
 {
 	switch (type) {
 	case 1:
-		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_STA_CONNECTED, NULL, 0);
+	{
+		trwifi_cbk_msg_s msg = {TRWIFI_REASON_UNKNOWN, {0,}, NULL};
+		rtw_memcpy(msg.bssid, ap_bssid, ETH_ALEN);
+		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_STA_CONNECTED, &msg, sizeof(trwifi_cbk_msg_s));
 		break;
+	}
 	case 2:
 		trwifi_post_event(ameba_nm_dev_wlan0, LWNL_EVT_STA_CONNECT_FAILED, NULL, 0);
 		break;
@@ -354,7 +464,7 @@ trwifi_result_e wifi_netmgr_utils_init(struct netdev *dev)
 	trwifi_result_e wuret = TRWIFI_FAIL;
 	if (g_mode == RTK_WIFI_NONE) {
 		int ret = RTK_STATUS_SUCCESS;
-		
+
 		ret = WiFiRegisterLinkCallback(&linkup_handler, &linkdown_handler);
 		if (ret != RTK_STATUS_SUCCESS) {
 			ndbg("[RTK] Link callback handles: register failed !\n");
@@ -369,7 +479,10 @@ trwifi_result_e wifi_netmgr_utils_init(struct netdev *dev)
 			return wuret;
 		}
 		g_mode = RTK_WIFI_STATION_IF;
+		extern const char lib_wlan_rev[];
+		RTW_API_INFO("\n\rwlan_version %s\n", lib_wlan_rev);
 		wuret = TRWIFI_SUCCESS;
+		rtw_mutex_init(&scanlistbusy);
 	} else {
 		ndbg("Already %d\n", g_mode);
 	}
@@ -384,6 +497,18 @@ trwifi_result_e wifi_netmgr_utils_deinit(struct netdev *dev)
 	if (ret == RTK_STATUS_SUCCESS) {
 		g_mode = RTK_WIFI_NONE;
 		wuret = TRWIFI_SUCCESS;
+		rtw_mutex_get(&scanlistbusy);
+		if (scan_timer.timer_hdl != NULL) {
+			rtw_cancel_timer(&(scan_timer));
+			rtw_del_timer(&(scan_timer));
+		}
+		if (saved_scan_list) {
+			rtw_mfree((unsigned char *)saved_scan_list, sizeof(ap_scan_list_s) * scan_number);
+			saved_scan_list = NULL;
+		}
+		scan_number = 0;
+		rtw_mutex_put(&scanlistbusy);
+		rtw_mutex_free(&scanlistbusy);
 	} else {
 		ndbg("[RTK] Failed to stop STA mode\n");
 	}
@@ -392,17 +517,36 @@ trwifi_result_e wifi_netmgr_utils_deinit(struct netdev *dev)
 
 trwifi_result_e wifi_netmgr_utils_scan_ap(struct netdev *dev, trwifi_scan_config_s *config)
 {
+	g_scan_num = 0;
+	g_scan_list = NULL;
 	if (config) {
-		if (config->ssid_length > 0) {
+		 if ((config->channel >= 1) && (config->channel <= 13)) {
+			uint32_t	channel;
+			uint8_t     pscan_config;
+			if (config->ssid_length == 0) {
+				rtw_memset(config->ssid, 0, sizeof(config->ssid));
+				config->ssid_length = 0;
+			}
+			channel = config->channel;
+			channel &= 0xff;
+			pscan_config = PSCAN_ENABLE;
+			if (wifi_set_pscan_chan((uint8_t *)&channel, &pscan_config, 1) < 0 ) {
+				RTW_API_INFO("set pscan channel failed\n");
+				return TRWIFI_FAIL;
+			}
+		}
+		if ((config->ssid_length > 0) || ((config->channel >= 1) && (config->channel <= 13))) {
 			int scan_buf_len = 500;
 			rltk_wlan_enable_scan_with_ssid_by_extended_security(1);
 			if (wifi_scan_networks_with_ssid(parse_scan_with_ssid_res, NULL,
-											 scan_buf_len, config->ssid, config->ssid_length) != RTW_SUCCESS) {
+											scan_buf_len, config->ssid, config->ssid_length) != RTW_SUCCESS) {
+				rltk_wlan_enable_scan_with_ssid_by_extended_security(0);
 				return TRWIFI_FAIL;
 			}
+			rltk_wlan_enable_scan_with_ssid_by_extended_security(0);
 		} else {
-			// scan specified channel.
-			return TRWIFI_NOT_SUPPORTED;
+			RTW_API_INFO("Invalid channel range\n");
+			return TRWIFI_FAIL;
 		}
 	} else {
 		if (wifi_scan_networks(app_scan_result_handler, NULL ) != RTW_SUCCESS) {
@@ -422,6 +566,7 @@ trwifi_result_e wifi_netmgr_utils_connect_ap(struct netdev *dev, trwifi_ap_confi
 	}
 
 	int ret;
+	uint32_t ap_channel;
 	wuret = TRWIFI_FAIL;
 
 	if (g_mode == RTK_WIFI_SOFT_AP_IF) {
@@ -436,7 +581,24 @@ trwifi_result_e wifi_netmgr_utils_connect_ap(struct netdev *dev, trwifi_ap_confi
 		}
 	}
 
-	ret = cmd_wifi_connect(ap_connect_config, arg);
+	ap_channel = 0xffff;
+
+	rtw_mutex_get(&scanlistbusy);
+	if (scan_number) {
+		int i;
+		for (i = 0 ; i < scan_number ; i++) {
+			if((strncmp(saved_scan_list[i].ssid, ap_connect_config->ssid, ap_connect_config->ssid_length) == 0)
+				&& (ap_connect_config->ap_auth_type == saved_scan_list[i].ap_auth_type)
+				&& (ap_connect_config->ap_crypto_type == saved_scan_list[i].ap_crypto_type)) {
+				ap_channel = saved_scan_list[i].channel;
+			vddbg("[RTK] Scanned AP info : ssid = %s, auth = %d, crypt = %d, channel = %d\n", ap_connect_config->ssid, ap_connect_config->ap_auth_type, ap_connect_config->ap_crypto_type, ap_channel);
+				break;
+			}
+		}
+	}
+	rtw_mutex_put(&scanlistbusy);
+
+	ret = cmd_wifi_connect(ap_connect_config, arg, ap_channel);
 	if (ret != RTK_STATUS_SUCCESS) {
 		ndbg("[RTK] WiFiNetworkJoin failed: %d, %s\n", ret, ap_connect_config->ssid);
 		return wuret;
@@ -511,8 +673,9 @@ trwifi_result_e wifi_netmgr_utils_start_softap(struct netdev *dev, trwifi_softap
 		nvdbg("[RTK] Link callback handles: registered\n");
 	}
 
-	if (cmd_wifi_ap(softap_config) != RTK_STATUS_SUCCESS) {
-		ndbg("[RTK] Failed to start AP mode\n");
+	ret = cmd_wifi_ap(softap_config);
+	if (ret != RTK_STATUS_SUCCESS) {
+		ndbg("[RTK] Failed to start AP mode(%d)\n", ret);
 		return ret;
 	}
 	g_mode = RTK_WIFI_SOFT_AP_IF;

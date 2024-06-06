@@ -119,6 +119,10 @@ SECTIONS
 		*(COMMON)
 		. = ALIGN(4);
 		_ebss = ABSOLUTE(.);
+		_sidle_stack = ABSOLUTE(.);
+		. = . + CONFIG_IDLETHREAD_STACKSIZE ;
+		/* Heap start address in internal RAM */
+		_sint_heap = ABSOLUTE(.);
 	} > ksram
 
 	/* Stabs debugging sections. */

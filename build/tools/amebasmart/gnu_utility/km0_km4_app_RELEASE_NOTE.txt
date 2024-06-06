@@ -1,0 +1,86 @@
+/* == "version" + "Realtek git version" + "compile date" + "compile time" == */
+
+== version 2eb067f 2024/05/08-12:24:28 ==
+1. Enable GPIO channel A as wakeup interrupt src
+2. Add wakeup src information
+
+== version d08ed534 2024/05/31-17:08:16 ==
+1.	Add feature in fault handler to indicate KM4/KM0 fault
+
+== version 972ebbee 2024/05/27-19:24:11 ==
+1.	Add support for scanning up to 6 specific APs
+	- If the channel of any of the APs to scan is set to 0, scan will be on all valid channels
+2.	Add scan option to support scanning specific APs and report other APs responding to NULL probe req
+
+== version 4443689 2024/05/24-16:08:04 ==
+1.	Fix km4 crash when running wificsi example
+
+== version 756ad947 2024/04/30-17:54:41 ==
+1.	Toggle LOGUART clck src
+
+== version 2d0f1be032 2024/04/29-09:52:12 ==
+1.	Change optimization flags from "-O2" to "-Os"
+2.	Adjust the PSRAM Layout
+	- CA32 ATF address adjusted: 0x7001_7000 - 0x7010_0000; 932KB
+	- CA32 BL33 address adjusted: 0x6010_0000 - 0x6080_0000; 7M
+
+== version 2b31f82 2024/04/09-18:45:06 ==
+1.	Enable LOGUART as wakeup src
+
+== version 9060401 2024/04/08-12:19:55 ==
+1.  Change coex code flow to fix tx hang issue, which caused "mgnt frame drop" logs
+
+== version 7e51f4b 2024/04/01-11:51:21 ==
+1.	Support ch_opt configuration, allow user to choose between legacy/non-legacy for wifi csi
+2.	Fix num_sub_carrier in csi header mismatch with actual csi len
+3.	Fix unexpected csi report with ch_opt=1
+
+== version 9cfc095 2024/02/19-10:07:39 ==
+1.	Update flash PMC code
+
+== version ad855c0 2024/02/01-13:58:48 ==
+1.	Release Loguart interrupt for AP core
+
+== version 7c8bfe5 2024/01/29-09:51:46 ==
+1.	Remove customization for LP Loguart
+
+== version 40b3dee 2024/01/26-17:14:28 ==
+1.	Reduce PSRAM layout in KM4 to 92k
+2.	Place KM4 in XIP
+
+== version 929fa1a 2024/01/23-18:49:58 ==
+1.	Fix cache coherency issue in KM4
+
+== version 0ad408a 2024/01/23-18:41:11 ==
+1.	Add prevention of double access to flash from KM4 and CA32
+
+== version 8bc7310 2024/01/16-11:53:35 ==
+1.	Reduce PSRAM layout in KM4 to 1024k
+
+== version 79e92a3 2023/12/18-1‏‎5:12:03 ==
+1.	Fix mix log in km4
+
+== version 79e92a3 2023/11/10-17:32:22 ==
+1.	Sync to version 8.4d SDK
+2.	Add buffer print feature for KM4, disabled by default (Only certain logs use buffer print)
+
+== version d832a8b 2023/11/07-10:35:32 ==
+1.	enable wificsi
+
+== version 1d0dc61 2023/10/19-17:32:22 ==
+1.	Fix mix log in km0 main
+
+== version 86182df 2023/10/18-17:20:22 ==
+1. 	Modify Coex Case for Wifi Scan, used PTA instead of TDMA
+
+== version f51d53f 2023/10/11-19:23:32 ==
+1. 	Modify FTL Flash access in NP to avoid error
+
+== version 125fbc78 /09/08-11:12:35 ==
+1. 	Fix BLE connection handle
+
+== version 02fd15b2 /08/28-19:21:31 ==
+1.	Sync to version 8.3c SDK
+
+== version 77121eeb /07/31-18:28:32 ==
+1.	Add version info	

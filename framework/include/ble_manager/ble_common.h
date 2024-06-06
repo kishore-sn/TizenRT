@@ -40,6 +40,7 @@
 /* These are board specific values */
 #define BLE_MAX_CONNECTION_COUNT 3
 #define BLE_MAX_BONDED_DEVICE 10
+#define BLE_DEFAULT_CONN_TIMEOUT 10000 /* 10 seconds */
 
 typedef struct _ble_data {
 	uint8_t *data;
@@ -68,6 +69,19 @@ typedef struct {
 	ble_addr_type_e type;
 } ble_addr;
 
+typedef enum {
+	BLE_SLAVE_CONN_PARAM_UPDATE,
+	BLE_MASTER_CONN_PARAM_UPDATE
+} ble_conn_param_role;
+
+typedef struct {
+	uint16_t min_conn_interval;
+	uint16_t max_conn_interval;
+	uint16_t slave_latency;
+	uint16_t supervision_timeout;
+	ble_conn_param_role role;
+} ble_conn_param;
+
 /**
  * @brief Result types of BLE Manager APIs such as FAIL, SUCCESS, or INVALID ARGS
  */
@@ -83,6 +97,7 @@ typedef enum {
 	BLE_MANAGER_UNSUPPORTED,
 	BLE_MANAGER_CALLBACK_NOT_REGISTERED,
 	BLE_MANAGER_ALREADY_WORKING,
+	BLE_MANAGER_OUT_OF_MEMORY,
 	BLE_MANAGER_UNKNOWN,
 } ble_result_e;
 

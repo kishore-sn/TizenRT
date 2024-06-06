@@ -96,6 +96,9 @@ extern const struct procfs_operations proc_operations;
 extern const struct procfs_operations cpuload_operations;
 extern const struct procfs_operations uptime_operations;
 extern const struct procfs_operations version_operations;
+#if defined(CONFIG_LOG_DUMP)
+extern const struct procfs_operations logsave_operations;
+#endif
 
 /* This is not good.  These are implemented in drivers/mtd.  Having to
  * deal with them here is not a good coupling.
@@ -127,6 +130,10 @@ static const struct procfs_entry_s g_procfsentries[] = {
 
 #if defined(CONFIG_SCHED_CPULOAD) && !defined(CONFIG_FS_PROCFS_EXCLUDE_CPULOAD)
 	{"cpuload", &cpuload_operations},
+#endif
+
+#if defined(CONFIG_LOG_DUMP)
+	{"logsave", &logsave_operations},
 #endif
 
 #if defined(CONFIG_FS_SMARTFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_SMARTFS)
@@ -485,9 +492,9 @@ static int procfs_opendir(FAR struct inode *mountpt, FAR const char *relpath, FA
 		 */
 
 #ifndef CONFIG_FS_PROCFS_EXCLUDE_PROCESS
-		flags = irqsave();
+		flags = enter_critical_section();
 		sched_foreach(procfs_enum, level0);
-		irqrestore(flags);
+		leave_critical_section(flags);
 #else
 		level0->base.index = 0;
 		level0->base.nentries = 0;
@@ -704,9 +711,9 @@ static int procfs_readdir(struct inode *mountpt, struct fs_dirent_s *dir)
 
 			pid = level0->pid[index];
 
-			flags = irqsave();
+			flags = enter_critical_section();
 			tcb = sched_gettcb(pid);
-			irqrestore(flags);
+			leave_critical_section(flags);
 
 			if (!tcb) {
 				fdbg("ERROR: PID %d is no longer valid\n", (int)pid);

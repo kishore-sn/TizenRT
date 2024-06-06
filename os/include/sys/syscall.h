@@ -99,19 +99,28 @@
 #define SYS_sched_yield                (CONFIG_SYS_RESERVED + 12)
 #define SYS_set_errno                  (CONFIG_SYS_RESERVED + 13)
 
+#ifdef CONFIG_SMP
+#define SYS_sched_getaffinity          (CONFIG_SYS_RESERVED + 14)
+#define SYS_sched_setaffinity          (CONFIG_SYS_RESERVED + 15)
+#define SYS_sched_getcpu               (CONFIG_SYS_RESERVED + 16)
+#define __SYS_sem                      (CONFIG_SYS_RESERVED + 17)
+#else
+#define __SYS_sem                      (CONFIG_SYS_RESERVED + 14)
+#endif
+
 /* Semaphores */
 
-#define SYS_sem_destroy                (CONFIG_SYS_RESERVED + 14)
-#define SYS_sem_post                   (CONFIG_SYS_RESERVED + 15)
-#define SYS_sem_timedwait              (CONFIG_SYS_RESERVED + 16)
-#define SYS_sem_trywait                (CONFIG_SYS_RESERVED + 17)
-#define SYS_sem_wait                   (CONFIG_SYS_RESERVED + 18)
+#define SYS_sem_destroy                (__SYS_sem + 0)
+#define SYS_sem_post                   (__SYS_sem + 1)
+#define SYS_sem_timedwait              (__SYS_sem + 2)
+#define SYS_sem_trywait                (__SYS_sem + 3)
+#define SYS_sem_wait                   (__SYS_sem + 4)
 
 #ifdef CONFIG_PRIORITY_INHERITANCE
-#define SYS_sem_setprotocol            (CONFIG_SYS_RESERVED + 19)
-#define __SYS_named_sem                (CONFIG_SYS_RESERVED + 20)
+#define SYS_sem_setprotocol            (__SYS_sem + 5)
+#define __SYS_named_sem                (__SYS_sem + 6)
 #else
-#define __SYS_named_sem                (CONFIG_SYS_RESERVED + 19)
+#define __SYS_named_sem                (__SYS_sem + 5)
 #endif
 
 /* Named semaphores */
@@ -398,9 +407,17 @@
 
 #ifndef CONFIG_PTHREAD_MUTEX_UNSAFE
 #define SYS_pthread_mutex_consistent   (__SYS_pthread + 18)
-#define __SYS_pthread_setschedparam   (__SYS_pthread + 19)
+#define __SYS_pthread_setaffinity_np   (__SYS_pthread + 19)
 #else
-#define __SYS_pthread_setschedparam   (__SYS_pthread + 18)
+#define __SYS_pthread_setaffinity_np   (__SYS_pthread + 18)
+#endif
+
+#ifdef CONFIG_SMP
+#define SYS_pthread_setaffinity_np     (__SYS_pthread_setaffinity_np + 0)	
+#define SYS_pthread_getaffinity_np     (__SYS_pthread_setaffinity_np + 1)	
+#define __SYS_pthread_setschedparam    (__SYS_pthread_setaffinity_np + 2)
+#else
+#define __SYS_pthread_setschedparam    (__SYS_pthread_setaffinity_np + 0)
 #endif
 
 #define SYS_pthread_setschedparam      (__SYS_pthread_setschedparam + 0)
@@ -466,11 +483,12 @@
 #define SYS_recvfrom                   (__SYS_network + 8)
 #define SYS_recvmsg                    (__SYS_network + 9)
 #define SYS_send                       (__SYS_network + 10)
-#define SYS_sendto                     (__SYS_network + 11)
-#define SYS_setsockopt                 (__SYS_network + 12)
-#define SYS_shutdown                   (__SYS_network + 13)
-#define SYS_socket                     (__SYS_network + 14)
-#define __SYS_prctl                    (__SYS_network + 15)
+#define SYS_sendmsg                    (__SYS_network + 11)
+#define SYS_sendto                     (__SYS_network + 12)
+#define SYS_setsockopt                 (__SYS_network + 13)
+#define SYS_shutdown                   (__SYS_network + 14)
+#define SYS_socket                     (__SYS_network + 15)
+#define __SYS_prctl                    (__SYS_network + 16)
 #else
 #define __SYS_prctl                    __SYS_network
 #endif
@@ -531,6 +549,7 @@ EXTERN const uintptr_t g_stublookup[SYS_nsyscalls];
  */
 
 EXTERN const uint8_t g_funcnparms[SYS_nsyscalls];
+EXTERN const char *g_funcnames[SYS_nsyscalls];
 
 /****************************************************************************
  * Public Functions

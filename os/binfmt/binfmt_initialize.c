@@ -60,11 +60,6 @@
 #include <tinyara/binfmt/builtin.h>
 #include <tinyara/binfmt/elf.h>
 
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-#include <queue.h>
-sq_queue_t g_bin_addr_list;
-#endif
-
 #ifdef CONFIG_BINFMT_ENABLE
 
 /****************************************************************************
@@ -111,8 +106,11 @@ void binfmt_initialize(void)
 	}
 #endif
 
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-	sq_init(&g_bin_addr_list);
+#ifdef CONFIG_XIP_ELF
+	ret = xipelf_initialize();
+	if (ret < 0) {
+		berr("ERROR: xipelf_initialize failed: %d\n", ret);
+	}
 #endif
 
 	UNUSED(ret);

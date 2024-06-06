@@ -115,7 +115,7 @@
 
 int task_activate(FAR struct tcb_s *tcb)
 {
-	irqstate_t flags = irqsave();
+	irqstate_t flags = enter_critical_section();
 #ifndef CONFIG_DISABLE_SIGNALS
 	int ret;
 	struct sigaction act;
@@ -131,7 +131,7 @@ int task_activate(FAR struct tcb_s *tcb)
 #endif
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
 	pid_t hash_pid;
-	struct mm_heap_s *heap = mm_get_heap(tcb->stack_alloc_ptr);
+	struct mm_heap_s *heap = kmm_get_heap(tcb->stack_alloc_ptr);
 
 	hash_pid = PIDHASH(tcb->pid);
 	if (heap && heap->alloc_list[hash_pid].pid == HEAPINFO_INIT_INFO) {
@@ -142,6 +142,6 @@ int task_activate(FAR struct tcb_s *tcb)
 	}
 #endif
 	up_unblock_task(tcb);
-	irqrestore(flags);
+	leave_critical_section(flags);
 	return OK;
 }

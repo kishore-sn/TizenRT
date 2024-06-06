@@ -77,7 +77,7 @@ void ble_tizenrt_scatternet_bt_stack_config_init(void)
     if(client_init_parm && client_init_parm->mtu)
         gap_config_max_mtu_size(client_init_parm->mtu);
     else
-        debug_print("\r\n[%s] init mtu is 0, use the default value 247", __FUNCTION__);
+        debug_print("init mtu is 0, use the default value 247 \n");
     gap_config_hci_task_secure_context(280);
     gap_config_deinit_flow(1);
 }
@@ -122,6 +122,9 @@ void ble_tizenrt_scatternet_app_le_gap_init(void)
     le_set_gap_param(GAP_PARAM_APPEARANCE, sizeof(appearance), &appearance);
     le_set_gap_param(GAP_PARAM_SLAVE_INIT_GATT_MTU_REQ, sizeof(slave_init_mtu_req),
                      &slave_init_mtu_req);
+
+    /* Set maximum mtu size, the maximum is 512 */
+    gap_config_max_mtu_size(512);
 
     /* Set advertising parameters */
     le_adv_set_param(GAP_PARAM_ADV_CHANNEL_MAP, sizeof(adv_chann_map), &adv_chann_map);
@@ -185,7 +188,7 @@ void ble_tizenrt_scatternet_app_le_gap_init(void)
 	le_set_gap_param(GAP_PARAM_DEFAULT_TX_PHYS_PREFER, sizeof(tx_phys_prefer), &tx_phys_prefer);
 	le_set_gap_param(GAP_PARAM_DEFAULT_RX_PHYS_PREFER, sizeof(rx_phys_prefer), &rx_phys_prefer);
 #endif
-
+	vendor_cmd_init(app_vendor_callback);
 }
 
 /**
@@ -208,7 +211,7 @@ void ble_tizenrt_scatternet_app_le_profile_init(void)
     }
     server_register_app_cb(ble_tizenrt_scatternet_app_profile_callback);
 
-    debug_print("\r\n[%s] init success", __FUNCTION__);
+    debug_print("init success \n");
 }
 
 
@@ -220,7 +223,7 @@ void ble_tizenrt_scatternet_app_le_profile_init(void)
 void ble_tizenrt_scatternet_task_init(void)
 {
     ble_tizenrt_scatternet_app_task_init();
-    debug_print("\r\n[%s] init success", __FUNCTION__);
+    debug_print("init success \n");
 }
 
 /**
@@ -236,7 +239,7 @@ int ble_tizenrt_scatternet_app_main(void)
     ble_tizenrt_scatternet_app_le_gap_init();
     ble_tizenrt_scatternet_app_le_profile_init();
     ble_tizenrt_scatternet_task_init();
-    debug_print("\r\n[%s] init success", __FUNCTION__);
+    debug_print("init success \n");
     return 0;
 }
 
@@ -253,7 +256,7 @@ int ble_tizenrt_scatternet_app_init(void)
 	/* judge BLE central is already on */
 	le_get_gap_param(GAP_PARAM_DEV_STATE , &new_state);
 	if (new_state.gap_init_state == GAP_INIT_STATE_STACK_READY) {
-		printf("[Tizenrt Scatternet] BT Stack already on\n\r");
+		dbg("BT Stack already on \n");
 		return 0;
 	}
 	else
@@ -269,7 +272,7 @@ int ble_tizenrt_scatternet_app_init(void)
 
 	/* Start BT WIFI coexistence */
 	wifi_btcoex_set_bt_on();
-    debug_print("\r\n[%s] init success", __FUNCTION__);
+	debug_print("init success \n");
 	return 0;
 
 }
@@ -281,14 +284,14 @@ void ble_tizenrt_scatternet_app_deinit(void)
 	T_GAP_DEV_STATE state;
 	le_get_gap_param(GAP_PARAM_DEV_STATE , &state);
 	if (state.gap_init_state != GAP_INIT_STATE_STACK_READY) {
-		printf("[Tizenrt Scatternet] BT Stack is not running\n\r");
+		dbg("BT Stack is not running \n");
 	}
 #if F_BT_DEINIT
 	else {
 		gcs_delete_client();
 		bte_deinit();
 		bt_trace_uninit();
-		printf("[Tizenrt Scatternet] BT Stack deinitalized\n\r");
+		dbg("BT Stack deinitialized \n");
 	}
 #endif
     tizenrt_ble_srv_count = 0;

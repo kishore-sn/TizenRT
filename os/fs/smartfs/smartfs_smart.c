@@ -221,6 +221,7 @@ static int smartfs_open(FAR struct file *filep, const char *relpath, int oflags,
 
 	sf->entry.name = NULL;
 	ret = smartfs_finddirentry(fs, &sf->entry, relpath);
+
 	/* Three possibilities: (1) a node exists for the relpath and
 	 * dirinfo describes the directory entry of the entity, (2) the
 	 * node does not exist, or (3) some error occurred.
@@ -245,20 +246,29 @@ static int smartfs_open(FAR struct file *filep, const char *relpath, int oflags,
 			goto errout_with_buffer;
 		}
 
-		/* TODO: Test open mode based on the file mode */
+		/* If the file is being opened in a mode other than "READ ONLY", we will need the length of the file */
+		if ((oflags & O_ACCMODE) != O_RDONLY) {
+			ret = smartfs_get_datalen(fs, sf->entry.firstsector, &sf->entry.datalen);
+			if (ret < 0) {
+				fdbg("ERROR, Could not get the length of the file, ret : %d\n", ret);
+				goto errout_with_buffer;
+			}
+		}
 
-		/* The file exists.  Check if we are opening it for O_CREAT or
-		 * O_TRUNC mode and delete the sector chain if we are. */
+		/* The file exists already.
+		 * If the file has been requested to be opened in TRUNCATE mode, then shrink the file.
+		 * However, if APPEND mode has also been requested, do not shrink the file to 0.
+		 */
 
-		if ((oflags & (O_CREAT | O_TRUNC)) != 0) {
-			/* Don't truncate if open for APPEND */
+		/* TODO: This method for checking the open modes is not in full accordance with POSIX standard.
+		 *       POSIX standard truncates the file i.e. shrinks to 0 irrespective of other included flags.
+		 */
 
-			if (!(oflags & O_APPEND)) {
-				/* Truncate the file to length 0 as part of the open */
-				ret = smartfs_shrinkfile(fs, sf, 0);
-				if (ret < 0) {
-					goto errout_with_buffer;
-				}
+		if (((oflags & O_TRUNC) != 0) && ((oflags & O_APPEND) == 0)) {
+			/* Truncate the file to length 0 as part of the open */
+			ret = smartfs_shrinkfile(fs, sf, 0);
+			if (ret < 0) {
+				goto errout_with_buffer;
 			}
 		}
 	} else if (ret == -ENOENT) {
@@ -576,14 +586,6 @@ static ssize_t smartfs_read(FAR struct file *filep, char *buffer, size_t buflen)
 
 			sf->currsector = SMARTFS_NEXTSECTOR(header);
 			sf->curroffset = sizeof(struct smartfs_chain_header_s);
-
-			/* Test if at end of data */
-
-			if (sf->currsector == SMARTFS_ERASEDSTATE_16BIT) {
-				/* No more data!  Return what we have */
-
-				break;
-			}
 		}
 	}
 
@@ -694,11 +696,18 @@ static ssize_t smartfs_write(FAR struct file *filep, const char *buffer, size_t 
 				smartfs_setbuffer(&readwrite, sf->currsector, sf->curroffset,\
 					 fs->fs_llformat.availbytes - sf->curroffset, (uint8_t *)&buffer[byteswritten]);
 #endif
+				/* Only the data bytes of the sector are written,
+				 * we do not re-write/overwrite the header bytes.
+				 */
 				ret = FS_IOCTL(fs, BIOC_WRITESECT, (unsigned long)&readwrite);
 				if (ret < 0) {
 					fdbg("Error writing sector %d data, ret : %d\n", readwrite.logsector, ret);
 					goto errout_with_semaphore;
 				}
+#ifdef CONFIG_SMARTFS_USE_SECTOR_BUFFER
+				/* Clear the flags, no longer dirty if the buffer content is written to flash */
+				sf->bflags = SMARTFS_BFLAG_UNMOD;
+#endif
 			}
 
 			/* Update our control variables */
@@ -720,22 +729,26 @@ static ssize_t smartfs_write(FAR struct file *filep, const char *buffer, size_t 
 				goto errout_with_semaphore;
 			}
 
-			/* If file is modified and more data remains to be appended to file, but no next sector is available,
-			 * do not update sf->currsector and curroffset. Will be handled when buffer data is synced.
+			/* If file is modified and more data remains to be appended to file,
+			 * but no next sector is available, do not update sf->currsector and curroffset.
+			 * This will be handled when buffer data is synced.
 			 */
 			if (SMARTFS_NEXTSECTOR(header) != 0xFFFF) {
-				sf->currsector = SMARTFS_NEXTSECTOR(header);
-				
 				/* Now get the chained sector info and reset the offset */
+				sf->currsector = SMARTFS_NEXTSECTOR(header);
 				sf->curroffset = size;
+
 #ifdef CONFIG_SMARTFS_USE_SECTOR_BUFFER
-				/* Read the next sector if more bytes remain in the write buffer */
+				/* Read the next sector's data if we have reached the end of the current sector
+				 * AND more data is left to be written.
+				 * The header of the current sector will be read later if required.
+				 */
 				if (buflen > 0) {
-					smartfs_setbuffer(&readwrite, sf->currsector, 0,\
-						 fs->fs_llformat.availbytes, (uint8_t *)sf->buffer);
+					smartfs_setbuffer(&readwrite, sf->currsector, size,\
+						 fs->fs_llformat.availbytes - size, (uint8_t *)&sf->buffer[size]);
 					ret = FS_IOCTL(fs, BIOC_READSECT, (unsigned long)&readwrite);
 					if (ret < 0) {
-						fdbg("Error %d reading sector %d header\n", ret, sf->currsector);
+						fdbg("Error %d reading sector %d\n", ret, sf->currsector);
 						goto errout_with_semaphore;
 					}
 				}
@@ -744,6 +757,20 @@ static ssize_t smartfs_write(FAR struct file *filep, const char *buffer, size_t 
 		}
 	}
 
+#ifdef CONFIG_SMARTFS_USE_SECTOR_BUFFER
+	/* If there is unsynced data in the sf->buffer and the control is now leaving the
+	 * scope of this function, the correct header should also be present in sf->buffer
+	 * for smartfs_append_data or smartfs_sync_internal. Hence we read the header now.
+	 */
+	if (sf->bflags & SMARTFS_BFLAG_DIRTY && byteswritten > 0) {
+		smartfs_setbuffer(&readwrite, sf->currsector, 0, size, (uint8_t*)sf->buffer);
+		ret = FS_IOCTL(fs, BIOC_READSECT, (unsigned long)&readwrite);
+		if (ret < 0) {
+			fdbg("Error %d reading sector %d header\n", ret, sf->currsector);
+			goto errout_with_semaphore;
+		}
+	}
+#endif
 	/* Now append any remaining data to end of the file. */
 	if (buflen > 0) {
 		byteswritten = smartfs_append_data(fs, sf, buffer, byteswritten, buflen);
@@ -1219,7 +1246,7 @@ static int smartfs_bind(FAR struct inode *blkdriver, const void *data, void **ha
 	}
 
 	/* If the global semaphore hasn't been initialized, then
-	 * initialized it now. */
+	 * initialize it now. */
 
 	fs->fs_sem = &g_sem;
 	if (!g_seminitialized) {
@@ -1232,7 +1259,7 @@ static int smartfs_bind(FAR struct inode *blkdriver, const void *data, void **ha
 	}
 
 	/* Initialize the allocated mountpt state structure.  The filesystem is
-	 * responsible for one reference ont the blkdriver inode and does not
+	 * responsible for one reference on the blkdriver inode and does not
 	 * have to addref() here (but does have to release in ubind().
 	 */
 
@@ -1247,11 +1274,13 @@ static int smartfs_bind(FAR struct inode *blkdriver, const void *data, void **ha
 	}
 
 	*handle = (void *)fs;
-	
+
+#ifndef NXFUSE_HOST_BUILD
 	ret = smartfs_sector_recovery(fs);
 	if (ret != 0) {
 		goto error_with_semaphore;
 	}
+#endif
 
 	smartfs_semgive(fs);
 	return ret;
@@ -1470,6 +1499,9 @@ static int smartfs_mkdir(struct inode *mountpt, const char *relpath, mode_t mode
 	}
 
 errout_with_semaphore:
+	if (entry.name != NULL) {
+		kmm_free(entry.name);
+	}
 	smartfs_semgive(fs);
 	return ret;
 }
@@ -1725,6 +1757,13 @@ static int smartfs_stat(struct inode *mountpt, const char *relpath, struct stat 
 	entry.name = NULL;
 	ret = smartfs_finddirentry(fs, &entry, relpath);
 	if (ret < 0) {
+		goto errout_with_semaphore;
+	}
+
+	/* We need to know the data length of the file too */
+	ret = smartfs_get_datalen(fs, entry.firstsector, &entry.datalen);
+	if (ret < 0) {
+		fdbg("ERROR, Could not get the length of the file, ret : %d\n", ret);
 		goto errout_with_semaphore;
 	}
 

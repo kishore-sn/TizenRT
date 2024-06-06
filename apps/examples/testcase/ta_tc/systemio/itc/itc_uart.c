@@ -25,17 +25,19 @@
  ****************************************************************************/
 #include <tinyara/config.h>
 #include <iotbus_uart.h>
+#include <termios.h>
 #include "itc_internal.h"
 #include "iotbus_error.h"
 #include <string.h>
 
 #define MICROSECOND 1000000
 #define BUF_LEN 32
-#ifdef CONFIG_ARCH_CHIP_STM32
-#define DEVPATH "/dev/ttyS1"
-#else                            // artik
-#define DEVPATH "/dev/ttyS2"
+
+#if !defined(CONFIG_SYSIO_ITC_UART_FILE_PATH)
+#error To run system I/O testcase, kindly set file path of uart device(CONFIG_SYSIO_ITC_UART_FILE_PATH) on menuconfig.
 #endif
+
+#define DEVPATH   CONFIG_SYSIO_ITC_UART_FILE_PATH
 
 /**
 * @testcase         itc_systemio_iotbus_uart_init_stop_p
@@ -270,10 +272,14 @@ void itc_systemio_iotbus_uart_set_flowcontrol_p(void)
 void itc_systemio_iotbus_uart_write_read_p(void)
 {
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	ret = iotbus_uart_write(h_uart, sz_input_text, sizeof(sz_input_text));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write", ret < 0, false, iotbus_uart_stop(h_uart));
@@ -282,8 +288,11 @@ void itc_systemio_iotbus_uart_write_read_p(void)
 
 	ret = iotbus_uart_read(h_uart, sz_output_text, sizeof(sz_output_text));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", ret < 0, false, iotbus_uart_stop(h_uart));
-
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", strcmp(sz_input_text, sz_output_text), 0, iotbus_uart_stop(h_uart));
+
+	// turn off the loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	ret = iotbus_uart_stop(h_uart);
 	TC_ASSERT_EQ("iotbus_uart_stop", ret, IOTBUS_ERROR_NONE);
@@ -325,11 +334,15 @@ void itc_systemio_iotbus_uart_flush_p(void)
 static void itc_systemio_iotbus_uart_write_read_flush_p(void)
 {
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	ret = iotbus_uart_write(h_uart, sz_input_text, sizeof(sz_input_text));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write", ret < 0, false, iotbus_uart_stop(h_uart));
@@ -339,6 +352,10 @@ static void itc_systemio_iotbus_uart_write_read_flush_p(void)
 	ret = iotbus_uart_read(h_uart, sz_output_text, sizeof(sz_output_text));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", ret < 0, false, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", strcmp(sz_input_text, sz_output_text), 0, iotbus_uart_stop(h_uart));
+
+	// turn off the loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	ret = iotbus_uart_flush(h_uart);
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_flush", ret, IOTBUS_ERROR_NONE, iotbus_uart_stop(h_uart));
@@ -360,8 +377,8 @@ static void itc_systemio_iotbus_uart_write_read_flush_p(void)
 static void itc_systemio_iotbus_uart_write_read_flush_p_multi_handle(void)
 {
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text1[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
-	char sz_input_text2[BUF_LEN] = "UART READ/WRITE ITC TESTING1!";
+	char sz_input_text1[BUF_LEN] = "UART R/W TEST1";
+	char sz_input_text2[BUF_LEN] = "UART R/W TEST2";
 	char sz_output_text[BUF_LEN];
 
 	iotbus_uart_context_h h_uart1 = iotbus_uart_init(DEVPATH);
@@ -370,10 +387,11 @@ static void itc_systemio_iotbus_uart_write_read_flush_p_multi_handle(void)
 	iotbus_uart_context_h h_uart2 = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ_CLEANUP("iotbus_uart_init", h_uart2, NULL, iotbus_uart_stop(h_uart1));
 
-	ret = iotbus_uart_write(h_uart1, sz_input_text1, sizeof(sz_input_text1));
-	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart1, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
 
-	ret = iotbus_uart_write(h_uart2, sz_input_text2, sizeof(sz_input_text2));
+	ret = iotbus_uart_write(h_uart1, sz_input_text1, sizeof(sz_input_text1));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
 
 	usleep(MICROSECOND);
@@ -382,9 +400,18 @@ static void itc_systemio_iotbus_uart_write_read_flush_p_multi_handle(void)
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", strcmp(sz_input_text1, sz_output_text), 0, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
 
+	ret = iotbus_uart_write(h_uart2, sz_input_text2, sizeof(sz_input_text2));
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
+
+	usleep(MICROSECOND);
+
 	ret = iotbus_uart_read(h_uart2, sz_output_text, sizeof(sz_output_text));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read", strcmp(sz_input_text2, sz_output_text), 0, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
+
+	// turn off the loopback mode
+	ret = iotbus_uart_control_loopback(h_uart2, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
 
 	ret = iotbus_uart_flush(h_uart1);
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_flush", ret, IOTBUS_ERROR_NONE, iotbus_uart_stop(h_uart1); iotbus_uart_stop(h_uart2));
@@ -453,7 +480,7 @@ static void itc_systemio_iotbus_uart_set_flow_write_read_p(void)
 {
 	int i_size = 4;
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 	int rtscts[4][2] = { {1, 0}, {0, 1}, {1, 1}, {0, 0} };
 	int index = 0;
@@ -463,6 +490,10 @@ static void itc_systemio_iotbus_uart_set_flow_write_read_p(void)
 
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	for (index = 0; index < i_size; index++) {
 		ret = iotbus_uart_set_flowcontrol(h_uart, rtscts[index][0], rtscts[index][1]);
@@ -487,6 +518,10 @@ static void itc_systemio_iotbus_uart_set_flow_write_read_p(void)
 			count_fail_read++;
 		}
 	}
+	// turn off loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
+
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write failed count", count_fail_write, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read failed count", count_fail_read, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_set_flowcontrol failed count", count_fail_flowcontrol, 0, iotbus_uart_stop(h_uart));
@@ -509,7 +544,7 @@ static void itc_systemio_iotbus_uart_set_flow_flush_write_read_p(void)
 {
 	int i_size = 4;
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 	int rtscts[4][2] = { {1, 0}, {0, 1}, {1, 1}, {0, 0} };
 	int index = 0;
@@ -520,6 +555,10 @@ static void itc_systemio_iotbus_uart_set_flow_flush_write_read_p(void)
 
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	for (index = 0; index < i_size; index++) {
 		ret = iotbus_uart_set_flowcontrol(h_uart, rtscts[index][0], rtscts[index][1]);
@@ -552,6 +591,10 @@ static void itc_systemio_iotbus_uart_set_flow_flush_write_read_p(void)
 		}
 	}
 
+	// turn off loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
+
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_flush failed count", count_fail_flush, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write failed count", count_fail_write, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read failed count", count_fail_read, 0, iotbus_uart_stop(h_uart));
@@ -576,7 +619,7 @@ static void itc_systemio_iotbus_uart_set_mode_write_read_p(void)
 	int i_bytesize = 8;
 	int i_stop_bits = 1;
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 	int mode[] = { IOTBUS_UART_PARITY_NONE, IOTBUS_UART_PARITY_EVEN, IOTBUS_UART_PARITY_ODD };
 	char *mode_str[3] = { "IOTBUS_UART_PARITY_NONE", "IOTBUS_UART_PARITY_EVEN", "IOTBUS_UART_PARITY_ODD" };
@@ -588,6 +631,10 @@ static void itc_systemio_iotbus_uart_set_mode_write_read_p(void)
 
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	for (index = 0; index < i_modes; index++) {
 		ret = iotbus_uart_set_mode(h_uart, i_bytesize, mode[index], i_stop_bits);
@@ -613,6 +660,10 @@ static void itc_systemio_iotbus_uart_set_mode_write_read_p(void)
 		}
 	}
 
+	// turn off loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
+
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_set_mode failed count", count_fail_mode, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_write failed count", count_fail_write, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_read failed count", count_fail_read, 0, iotbus_uart_stop(h_uart));
@@ -636,7 +687,7 @@ static void itc_systemio_iotbus_uart_set_mode_flush_write_read_p(void)
 	int i_bytesize = 8;
 	int i_stop_bits = 1;
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 	int mode[] = { IOTBUS_UART_PARITY_NONE, IOTBUS_UART_PARITY_EVEN, IOTBUS_UART_PARITY_ODD };
 	char *mode_str[3] = { "IOTBUS_UART_PARITY_NONE", "IOTBUS_UART_PARITY_EVEN", "IOTBUS_UART_PARITY_ODD" };
@@ -649,6 +700,10 @@ static void itc_systemio_iotbus_uart_set_mode_flush_write_read_p(void)
 
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	for (index = 0; index < i_modes; index++) {
 		ret = iotbus_uart_set_mode(h_uart, i_bytesize, mode[index], i_stop_bits);
@@ -680,6 +735,9 @@ static void itc_systemio_iotbus_uart_set_mode_flush_write_read_p(void)
 			count_fail_read++;
 		}
 	}
+	// turn off loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_set_mode failed count", count_fail_mode, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_flush failed count", count_fail_flush, 0, iotbus_uart_stop(h_uart));
@@ -706,7 +764,7 @@ static void itc_systemio_iotbus_uart_set_flow_mode_flush_write_read_p(void)
 	int i_flow_size = 4;
 	int i_stop_bits = 1;
 	int ret = IOTBUS_ERROR_NONE;
-	char sz_input_text[BUF_LEN] = "UART READ/WRITE ITC TESTING!";
+	char sz_input_text[BUF_LEN] = "UART R/W TEST";
 	char sz_output_text[BUF_LEN];
 	int mode[] = { IOTBUS_UART_PARITY_NONE, IOTBUS_UART_PARITY_EVEN, IOTBUS_UART_PARITY_ODD };
 	char *mode_str[3] = { "IOTBUS_UART_PARITY_NONE", "IOTBUS_UART_PARITY_EVEN", "IOTBUS_UART_PARITY_ODD" };
@@ -722,6 +780,10 @@ static void itc_systemio_iotbus_uart_set_flow_mode_flush_write_read_p(void)
 
 	iotbus_uart_context_h h_uart = iotbus_uart_init(DEVPATH);
 	TC_ASSERT_NEQ("iotbus_uart_init", h_uart, NULL);
+
+	// turn on loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_ON);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
 
 	for (flow_index = 0; flow_index < i_flow_size; flow_index++) {
 		ret = iotbus_uart_set_flowcontrol(h_uart, rtscts[flow_index][0], rtscts[flow_index][1]);
@@ -762,6 +824,10 @@ static void itc_systemio_iotbus_uart_set_flow_mode_flush_write_read_p(void)
 			}
 		}
 	}
+	// turn off loopback mode
+	ret = iotbus_uart_control_loopback(h_uart, LOOPBACK_OFF);
+	TC_ASSERT_EQ_CLEANUP("iotbus_uart_control_loopback", ret < 0, false, iotbus_uart_stop(h_uart));
+
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_set_flowcontrol failed count", count_fail_flowcontrol, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_set_mode failed count", count_fail_mode, 0, iotbus_uart_stop(h_uart));
 	TC_ASSERT_EQ_CLEANUP("iotbus_uart_flush failed count", count_fail_flush, 0, iotbus_uart_stop(h_uart));

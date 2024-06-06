@@ -16,6 +16,7 @@ config TC_NET_ALL
 	bool "All"
 	default n
 	select TC_NET_SOCKET
+	select TC_NET_SOCKET_SHARE
 	select TC_NET_PBUF
 	select TC_NET_SETSOCKOPT
 	select TC_NET_CONNECT
@@ -29,10 +30,10 @@ config TC_NET_ALL
 	select TC_NET_ACCEPT
 	select TC_NET_SEND
 	select TC_NET_RECV
-    select TC_NET_GETPEERNAME
-    select TC_NET_SENDTO
-    select TC_NET_RECVFROM
-    select TC_NET_SHUTDOWN
+	select TC_NET_GETPEERNAME
+	select TC_NET_SENDTO
+	select TC_NET_RECVFROM
+	select TC_NET_SHUTDOWN
 	select TC_NET_DHCPC
 	select TC_NET_SELECT
 	select TC_NET_INET
@@ -48,7 +49,15 @@ config TC_NET_ALL
 
 config TC_NET_SOCKET
 	bool "socket() api"
+	depends on NET_LWIP_IGMP
+	depends on NET_IPv6
 	default n
+
+config TC_NET_SOCKET_SHARE
+	bool "socket share test"
+	default n
+	---help---
+		verify that socket is shared among tasks which are in same task group
 
 config TC_NET_PBUF
 	bool "pbuf() api "
@@ -90,7 +99,10 @@ config TC_NET_FCNTL
 config TC_NET_IOCTL
 	bool "ioctl() api"
 	default n
-
+	---help---
+		tc_net_ioctl_fionread_p requires NET_SO_RCVBUF
+		itc_net_setsockopt_p_sndtimo requires NET_SO_SNDTIMEO
+		
 config TC_NET_ACCEPT
 	bool "accept() api"
 	default n
@@ -146,6 +158,8 @@ config ITC_NET_LISTEN
 config ITC_NET_SETSOCKOPT
 	bool "ITC setsockopt() api"
 	default n
+	---help---
+		itc_net_setsockopt_p_rcvbuf requires NET_SO_RCVBUF
 
 config ITC_NET_SEND
 	bool "ITC send() api"

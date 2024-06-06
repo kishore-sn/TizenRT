@@ -77,15 +77,23 @@
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
+#if defined(CONFIG_DEBUG_WORKQUEUE)
+#if defined(CONFIG_BUILD_FLAT) || (defined(CONFIG_BUILD_PROTECTED) && defined(__KERNEL__))
+#include <tinyara/wqueue.h>
+#endif
+#endif
 
 #include <tinyara/irq.h>
 #include <tinyara/arch.h>
 #include <tinyara/board.h>
+#include <tinyara/sched.h>
 #include <tinyara/usb/usbdev_trace.h>
 #include <arch/board/board.h>
+#include <tinyara/security_level.h>
 
 #include "up_arch.h"
 #include "sched/sched.h"
+#include "task/task.h"
 #include "up_internal.h"
 #ifdef CONFIG_ARMV7M_MPU
 #include "mpu.h"
@@ -116,6 +124,11 @@ static bool recursive_abort = false;
 bool g_upassert = false;
 
 /****************************************************************************
+ * Public Variables
+ ****************************************************************************/
+char assert_info_str[CONFIG_STDIO_BUFFER_SIZE] = {'\0', };
+
+/****************************************************************************
  * Private Data
  ****************************************************************************/
 
@@ -130,11 +143,28 @@ bool g_upassert = false;
 #ifdef CONFIG_ARCH_STACKDUMP
 static void up_stackdump(uint32_t sp, uint32_t stack_base)
 {
-	uint32_t stack;
+	uint32_t stack = sp & ~0x1f;
+	uint32_t *ptr = (uint32_t *)stack;
+	uint8_t i;
 
-	for (stack = sp & ~0x1f; stack < stack_base; stack += 32) {
-		uint32_t *ptr = (uint32_t *)stack;
-		lldbg("%08x: %08x %08x %08x %08x %08x %08x %08x %08x\n", stack, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+	lldbg("%08x:", stack);
+	for (i = 0; i < 8; i++) {  // Print first 8 values for sp located
+		if (stack < sp) {
+			/* If stack pointer(sp) is aligned(sp & 0x1f) to an address outside allocated stack */
+			/* Then, for stack addresses outside allocated stack, print 'xxxxxxxx' */
+			lldbg_noarg(" xxxxxxxx");
+		} else {
+			/* For remaining stack addresses inside allocated stack, print proper stack address values */
+			lldbg_noarg(" %08x", ptr[i]);
+		}
+		stack += 4;
+	}
+	lldbg_noarg("\n");
+
+	for (; stack < stack_base; stack += 32) { // Print remaining stack values from 9th value to end
+		ptr = (uint32_t *)stack;
+		lldbg("%08x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+			   stack, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
 	}
 }
 #else
@@ -452,61 +482,6 @@ void dump_stack(void)
 	irqrestore(flags);
 }
 #endif						/* End of CONFIG_FRAME_POINTER */
-
-/****************************************************************************
- * Name: up_taskdump
- ****************************************************************************/
-
-#ifdef CONFIG_STACK_COLORATION
-static void up_taskdump(FAR struct tcb_s *tcb, FAR void *arg)
-{
-	size_t used_stack_size;
-
-	used_stack_size = up_check_tcbstack(tcb);
-	/* Dump interesting properties of this task */
-
-#if CONFIG_TASK_NAME_SIZE > 0
-	lldbg("%10s | %5d | %4d | %7lu / %7lu\n",
-			tcb->name, tcb->pid, tcb->sched_priority,
-			(unsigned long)used_stack_size, (unsigned long)tcb->adj_stack_size);
-#else
-	lldbg("%5d | %4d | %7lu / %7lu\n",
-			tcb->pid, tcb->sched_priority, (unsigned long)used_stack_size,
-			(unsigned long)tcb->adj_stack_size);
-#endif
-
-	if (used_stack_size == tcb->adj_stack_size) {
-		lldbg("  !!! PID (%d) STACK OVERFLOW !!! \n", tcb->pid);
-	}
-}
-#endif
-
-/****************************************************************************
- * Name: up_showtasks
- ****************************************************************************/
-
-#ifdef CONFIG_STACK_COLORATION
-static inline void up_showtasks(void)
-{
-	lldbg("*******************************************\n");
-	lldbg("List of all tasks in the system:\n");
-	lldbg("*******************************************\n");
-
-#if CONFIG_TASK_NAME_SIZE > 0
-	lldbg("   NAME   |  PID  |  PRI |    USED /  TOTAL STACK\n");
-	lldbg("--------------------------------------------------\n");
-#else
-	lldbg("  PID | PRI |   USED / TOTAL STACK\n");
-	lldbg("----------------------------------\n");
-#endif
-
-	/* Dump interesting properties of each task in the crash environment */
-
-	sched_foreach(up_taskdump, NULL);
-}
-#else
-#define up_showtasks()
-#endif
 
 struct arm_mode_regs_s {
 	/* ARM provides 37 General purpos registers as below */
@@ -877,7 +852,7 @@ static void up_dumpstate(void)
 
 	/* Dump the state of all tasks (if available) */
 
-	up_showtasks();
+	task_show_alivetask_list();
 
 #ifdef CONFIG_FRAME_POINTER
 	/* Display the call stack of all tasks */
@@ -923,6 +898,45 @@ static void _up_assert(int errorcode)
 }
 
 /****************************************************************************
+ * Name: print_assert_detail
+ ****************************************************************************/
+
+static inline void print_assert_detail(const uint8_t *filename, int lineno, struct tcb_s *fault_tcb)
+{
+#if CONFIG_TASK_NAME_SIZE > 0
+	lldbg("Assertion failed at file:%s line: %d task: %s\n", filename, lineno, fault_tcb->name);
+#else
+	lldbg("Assertion failed at file:%s line: %d\n", filename, lineno);
+#endif
+
+	/* Print the extra arguments (if any) from ASSERT_INFO macro */
+	if (assert_info_str[0]) {
+		lldbg("%s\n", assert_info_str);
+	}
+
+#if defined(CONFIG_DEBUG_WORKQUEUE)
+#if defined(CONFIG_BUILD_FLAT) || (defined(CONFIG_BUILD_PROTECTED) && defined(__KERNEL__))
+	if (IS_HPWORK || IS_LPWORK) {
+		lldbg("Running work function is %x.\n", work_get_current());
+	}
+#endif
+#endif /* defined(CONFIG_DEBUG_WORKQUEUE) */
+
+	up_dumpstate();
+
+	/* Dump the asserted TCB */
+	lldbg("*******************************************\n");
+	lldbg("Asserted TCB Info\n");
+	lldbg("*******************************************\n");
+
+	task_show_tcbinfo(fault_tcb);
+
+#if defined(CONFIG_BOARD_CRASHDUMP)
+	board_crashdump(up_getsp(), this_task(), (uint8_t *)filename, lineno);
+#endif
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -934,6 +948,7 @@ void up_assert(const uint8_t *filename, int lineno)
 {
 
 	board_autoled_on(LED_ASSERTION);
+	struct tcb_s *fault_tcb = this_task();
 #if defined(CONFIG_DEBUG_DISPLAY_SYMBOL)
 	/* First time, when code reaches here abort_mode will be false and
 	   for next iteration (recursive abort case), abort_mode is already
@@ -945,16 +960,18 @@ void up_assert(const uint8_t *filename, int lineno)
 #endif
 	abort_mode = true;
 
-#if CONFIG_TASK_NAME_SIZE > 0
-	lldbg("Assertion failed at file:%s line: %d task: %s\n", filename, lineno, this_task()->name);
-#else
-	lldbg("Assertion failed at file:%s line: %d\n", filename, lineno);
+	lldbg("==============================================\n");
+	lldbg("Assertion failed\n");
+	lldbg("==============================================\n");
+#ifdef CONFIG_SECURITY_LEVEL
+	lldbg("security level: %d\n", get_security_level());
 #endif
-	up_dumpstate();
-
-#if defined(CONFIG_BOARD_CRASHDUMP)
-	board_crashdump(up_getsp(), this_task(), (uint8_t *)filename, lineno);
-#endif
+	/* Print assert detail information and dump state,
+	 * but if the OS is seucre state, do not print assertion failed logs.
+	 */
+	if (!IS_SECURE_STATE()) {
+		print_assert_detail(filename, lineno, fault_tcb);
+	}
 
 #if defined(CONFIG_BOARD_ASSERT_AUTORESET)
 	(void)boardctl(BOARDIOC_RESET, 0);

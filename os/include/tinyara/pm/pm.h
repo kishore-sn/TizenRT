@@ -86,6 +86,23 @@
 
 #include <tinyara/config.h>
 #include <queue.h>
+#include <semaphore.h>
+
+#if !defined(CONFIG_PM_NDOMAINS)
+#define CONFIG_PM_NDOMAINS 31
+#endif
+
+/* This enumeration provides all power management domains */
+enum pm_domain_e {
+	PM_IDLE_DOMAIN 	= 0,
+	PM_LCD_DOMAIN 	= 1,
+	PM_UART_DOMAIN 	= 2,
+	PM_WIFI_DOMAIN 	= 3,
+	PM_BLE_DOMAIN 	= 4,
+	PM_TASH_DOMAIN 	= 14,
+	PM_APP_DOMAIN 	= 15,
+	PM_NDOMAINS 	= CONFIG_PM_NDOMAINS,
+};
 
 #ifdef CONFIG_PM
 
@@ -200,7 +217,7 @@
 #endif
 
 #ifndef CONFIG_PM_IDLEENTER_COUNT
-#define CONFIG_PM_IDLEENTER_COUNT     30	/* Thirty IDLE slices to enter
+#define CONFIG_PM_IDLEENTER_COUNT     20	/* 20 IDLE slices to enter
 											 * IDLE mode from normal
 											 */
 #endif
@@ -218,7 +235,7 @@
 #endif
 
 #ifndef CONFIG_PM_STANDBYENTER_COUNT
-#define CONFIG_PM_STANDBYENTER_COUNT  50	/* Fifty IDLE slices to enter
+#define CONFIG_PM_STANDBYENTER_COUNT  20	/* 20 IDLE slices to enter
 											 * STANDBY mode from IDLE
 											 */
 #endif
@@ -236,7 +253,7 @@
 #endif
 
 #ifndef CONFIG_PM_SLEEPENTER_COUNT
-#define CONFIG_PM_SLEEPENTER_COUNT    70	/* 70 IDLE slices to enter SLEEP
+#define CONFIG_PM_SLEEPENTER_COUNT    20	/* 20 IDLE slices to enter SLEEP
 											 * mode from STANDBY
 											 */
 #endif
@@ -247,12 +264,6 @@
 /****************************************************************************
  * Public Types
  ****************************************************************************/
- 
-/* This enumeration provides all power management domains */
-enum pm_domain_e {
-	PM_IDLE_DOMAIN = 0,
-	PM_NDOMAINS = CONFIG_PM_NDOMAINS,
-};
 
 /* This enumeration provides all power management states.  Receipt of the
  * state indication is the state transition event.
@@ -297,6 +308,32 @@ enum pm_state_e {
 	PM_COUNT,
 };
 
+enum pm_timer_type_e {
+	PM_NO_TIMER = 0,
+	PM_WAKEUP_TIMER = 1,
+	PM_LOCK_TIMER = 2,
+	/* Scope for future expansion, up to 8 timer types can be supported */
+};
+
+/* This structure is used to send data to pm driver from app side for timedSuspend */
+struct pm_suspend_arg_s {
+	enum pm_domain_e domain;          /* domain to be suspended */
+	unsigned int timer_interval;      /* duration to be suspended */
+};
+
+typedef struct pm_suspend_arg_s pm_suspend_arg_t;
+
+struct pm_timer_s {	
+	struct pm_timer_s *next;   			/* pointer to next timer in the linked list */
+	int pid;                          		/* id of process that created pm timer */
+	uint8_t flags;                    		/* See pm timer definations above*/
+	int delay;		          		/* refers to time of sleep expected */
+	void (*callback)(struct pm_timer_s *timer);     /* function to be executed when timer expires*/
+	sem_t pm_sem;             			/* argument for callback function after timer expires*/
+};
+
+typedef struct pm_timer_s pm_timer_t;
+
 /* This structure contain pointers callback functions in the driver.  These
  * callback functions can be used to provide power management information
  * to the driver.
@@ -336,7 +373,7 @@ struct pm_callback_s {
 	 *
 	 **************************************************************************/
 
-	int (*prepare)(FAR struct pm_callback_s *cb, int domain, enum pm_state_e pmstate);
+	int (*prepare)(FAR struct pm_callback_s *cb, enum pm_state_e pmstate);
 
 	/**************************************************************************
 	 * Name: notify
@@ -361,7 +398,7 @@ struct pm_callback_s {
 	 *
 	 **************************************************************************/
 
-	void (*notify)(FAR struct pm_callback_s *cb, int domain, enum pm_state_e pmstate);
+	void (*notify)(FAR struct pm_callback_s *cb, enum pm_state_e pmstate);
 };
 
 /****************************************************************************
@@ -437,36 +474,7 @@ int pm_register(FAR struct pm_callback_s *callbacks);
 int pm_unregister(FAR struct pm_callback_s *callbacks);
 
 /****************************************************************************
- * Name: pm_activity
- *
- * Description:
- *   This function is called by a device driver to indicate that it is
- *   performing meaningful activities (non-idle).  This increment an activity
- *   count and/or will restart a idle timer and prevent entering reduced
- *   power states.
- *
- * Input Parameters:
- *   domain - The domain of the PM activity
- *   priority - Activity priority, range 0-9.  Larger values correspond to
- *     higher priorities.  Higher priority activity can prevent the system
- *     from entering reduced power states for a longer period of time.
- *
- *     As an example, a button press might be higher priority activity because
- *     it means that the user is actively interacting with the device.
- *
- * Returned Value:
- *   None.
- *
- * Assumptions:
- *   This function may be called from an interrupt handler (this is the ONLY
- *   PM function that may be called from an interrupt handler!).
- *
- ****************************************************************************/
-
-void pm_activity(int domain, int priority);
-
-/****************************************************************************
- * Name: pm_stay
+ * Name: pm_suspend
  *
  * Description:
  *   This function is called by a device driver to indicate that it is
@@ -475,22 +483,22 @@ void pm_activity(int domain, int priority);
  *
  * Input Parameters:
  *   domain - The domain of the PM activity
- *   state - The state want to stay.
  *
  *     As an example, media player might stay in normal state during playback.
  *
  * Returned Value:
- *   None.
+ *   0 - On Success
+ *  -1 - On Error
  *
  * Assumptions:
  *   This function may be called from an interrupt handler.
  *
  ****************************************************************************/
 
-void pm_stay(int domain, enum pm_state_e state);
+int pm_suspend(enum pm_domain_e domain);
 
 /****************************************************************************
- * Name: pm_relax
+ * Name: pm_resume
  *
  * Description:
  *   This function is called by a device driver to indicate that it is
@@ -498,19 +506,117 @@ void pm_stay(int domain, enum pm_state_e state);
  *
  * Input Parameters:
  *   domain - The domain of the PM activity
- *   state - The state want to relax.
  *
  *     As an example, media player might relax power level after playback.
  *
  * Returned Value:
- *   None.
+ *   0 - On Success
+ *  -1 - On Error
  *
  * Assumptions:
  *   This function may be called from an interrupt handler.
  *
  ****************************************************************************/
 
-void pm_relax(int domain, enum pm_state_e state);
+int pm_resume(enum pm_domain_e domain);
+
+/****************************************************************************
+ * Name: pm_set_wakeup_timer
+ *
+ * Description:
+ *   This function is called just before sleep to start the required PM wake up
+ *   timer. It will start the first timer from the g_pm_timer_activelist with the
+ *   required delay.(delay should be positive)
+ * 
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   0 - system can go to sleep
+ *   -1 - system should not go to sleep
+ *
+ ****************************************************************************/
+
+int pm_set_wakeup_timer(void);
+
+/****************************************************************************
+ * Name: pm_timer_update
+ *
+ * Description:
+ *   This function decreases the delay of head pm timer in the 
+ *   g_pm_timer_activelist by given ticks. If the delay becomes 0,
+ *   It expires the pm timer.
+ *
+ * Input Parameters:
+ *   Ticks to decrease
+ *
+ * Returned Value:
+ *   None.
+ * 
+ * Assumption: This should be also implemented for CONFIG_SCHED_TICKLESS and
+ * CONFIG_SCHED_TICKSUPRESS.
+ *
+ ****************************************************************************/
+
+void pm_timer_update(int ticks);
+
+/************************************************************************
+ * Name: pm_timer_add
+ *
+ * Description:
+ *   This function adds a wakeup timer in the g_pm_timer_activelist. So that it will be
+ *   invoked just before sleep when needed. 
+ * 
+ * Parameters:
+ *   struct pm_timer_s pointer
+ *
+ * Return Value:
+ *   None
+ *
+ ************************************************************************/
+
+void pm_timer_add(pm_timer_t *timer);
+
+/************************************************************************
+ * Name: pm_sleep
+ *
+ * Description:
+ *   This function allows the board to sleep for given time interval.
+ *   When this function is called, it is expected that board will sleep for 
+ *   given duration of time. But for some cases board might not go 
+ *   to sleep instantly if :
+ * 	 1. system is in pm lock (pm state transition is locked)
+ *      2. Other threads(other than idle) are running
+ *      3. NORMAL to SLEEP state threshold time is large
+ * 
+ * Parameters:
+ *   milliseconds - expected board sleep duration (in milliseconds)
+ *
+ * Return Value:
+ *   0 - success
+ *   -1 - error
+ *
+ ************************************************************************/
+
+int pm_sleep(int milliseconds);
+
+/************************************************************************
+ * Name: pm_timedsuspend
+ *
+ * Description:
+ *   This function locks PM transition for a specific duration.  
+ * 
+ * Parameters:
+ *   domain - domain to be suspended
+ *   timer_interval - expected lock duration in millisecond
+ *
+ * Return Value:
+ *   0 - success
+ *   -1 - error
+ *
+ ************************************************************************/
+
+int pm_timedsuspend(enum pm_domain_e domain, unsigned int timer_interval);
 
 /****************************************************************************
  * Name: pm_staycount
@@ -520,7 +626,6 @@ void pm_relax(int domain, enum pm_state_e state);
  *
  * Input Parameters:
  *   domain - The domain of the PM activity
- *   state - The state want to relax.
  *
  * Returned Value:
  *   Current pm stay count
@@ -530,7 +635,7 @@ void pm_relax(int domain, enum pm_state_e state);
  *
  ****************************************************************************/
 
-uint32_t pm_staycount(int domain, enum pm_state_e state);
+uint32_t pm_staycount(enum pm_domain_e domain);
 
 /****************************************************************************
  * Name: pm_checkstate
@@ -563,7 +668,7 @@ uint32_t pm_staycount(int domain, enum pm_state_e state);
  *
  ****************************************************************************/
 
-enum pm_state_e pm_checkstate(int domain);
+enum pm_state_e pm_checkstate(void);
 
 /****************************************************************************
  * Name: pm_changestate
@@ -574,7 +679,6 @@ enum pm_state_e pm_checkstate(int domain);
  *   drivers that have registered for power management event callbacks.
  *
  * Input Parameters:
- *   domain - Identifies the domain of the new PM state
  *   newstate - Identifies the new PM state
  *
  * Returned Value:
@@ -593,7 +697,7 @@ enum pm_state_e pm_checkstate(int domain);
  *
  ****************************************************************************/
 
-int pm_changestate(int domain, enum pm_state_e newstate);
+int pm_changestate(enum pm_state_e newstate);
 
 /****************************************************************************
  * Name: pm_querystate
@@ -602,14 +706,39 @@ int pm_changestate(int domain, enum pm_state_e newstate);
  *   This function returns the current power management state.
  *
  * Input Parameters:
- *   domain - The PM domain to check
  *
  * Returned Value:
  *   The current power management state.
  *
  ****************************************************************************/
 
-enum pm_state_e pm_querystate(int domain);
+enum pm_state_e pm_querystate(void);
+
+#ifdef CONFIG_PM_DVFS
+/****************************************************************************
+ * Name: pm_dvfs
+ *
+ * Description:
+ *   This internal function is called to reduce the clock frequency
+ *   of CPU core. It can be applied on some scenario which when low
+ *	 loading activity is expected, we can invoke this API to wind down
+ *   CPU cores with high operating frequency, to enhance the effectiveness
+ *	 for power saving.
+ *
+ * Input Parameters:
+ *   div_lvl - voltage frequency scaling level
+ *
+ * Returned Value:
+ *   None.
+ *
+ * Assumptions:
+ *   Incorrect frequency scaling level given as input will lead to an assert.
+ *
+ ****************************************************************************/
+void pm_dvfs(int div_lvl);
+#endif
+
+void pm_driver_register(void);
 
 #undef EXTERN
 #ifdef __cplusplus
@@ -631,12 +760,11 @@ enum pm_state_e pm_querystate(int domain);
 #define pm_initialize()
 #define pm_register(cb)			(0)
 #define pm_unregister(cb)		(0)
-#define pm_activity(domain,prio)
-#define pm_stay(domain,state)
-#define pm_relax(domain,state)
-#define pm_checkstate(domain)		(0)
-#define pm_changestate(domain, state)	(0)
-#define pm_querystate(domain)        (0)
+#define pm_suspend(domain)
+#define pm_resume(domain)
+#define pm_checkstate()		(0)
+#define pm_changestate(state)	(0)
+#define pm_querystate()        (0)
 
 #endif							/* CONFIG_PM */
 #endif							/* __INCLUDE_TINYARA_POWER_PM_H */

@@ -1034,6 +1034,12 @@ copysign(_A1 __lcpp_x, _A2 __lcpp_y) _NOEXCEPT
     return copysign((__result_type)__lcpp_x, (__result_type)__lcpp_y);
 }
 
+/*
+ * Code disabled to resolve compilation error of cmath hides defintions in math.h in C11 & C14.
+ * Reference: https://stackoverflow.com/questions/39130040/cmath-hides-isnan-in-math-h-in-c14-c11
+ */
+
+#if 0
 #ifndef _LIBCPP_MSVCRT
 
 // erf
@@ -1419,7 +1425,7 @@ typename std::enable_if<std::is_integral<_A1>::value, double>::type
 trunc(_A1 __lcpp_x) _NOEXCEPT {return trunc((double)__lcpp_x);}
 
 #endif // !_LIBCPP_MSVCRT
-
+#endif
 } // extern "C++"
 
 #endif // __cplusplus

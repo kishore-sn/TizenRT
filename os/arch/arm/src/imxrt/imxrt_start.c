@@ -90,11 +90,11 @@
 /* Memory Map ***************************************************************/
 /* 0x2020:0000 - Start of on-chip RAM (OCRAM) and start of .data (_sdata)
  *             - End of .data (_edata) and start of .bss (_sbss)
- *             - End of .bss (_ebss) and bottom of idle stack
- *             - _ebss + CONFIG_IDLETHREAD_STACKSIZE = end of idle stack,
- *               start of heap. NOTE that the ARM uses a decrement before
- *               store stack so that the correct initial value is the end of
- *               the stack + 4;
+ *             - End of .bss (_ebss) and start of idle stack (_sidle_stack)
+ *             - _sidle_stack + CONFIG_IDLETHREAD_STACKSIZE = end of idle stack,
+ *             - _sint_heap start of heap. NOTE that the ARM uses a
+ *               decrement before store stack so that the correct initial value
+ *               is the end of the stack + 4;
  * 0x2027:ffff - End of OCRAM and end of heap (assuming 512Kb OCRAM)
  *
  * NOTE:  This assumes that all internal RAM is configured for OCRAM (vs.
@@ -104,14 +104,14 @@
  * here.
  */
 
-#define IDLE_STACK ((uintptr_t)&_ebss + CONFIG_IDLETHREAD_STACKSIZE - 4)
-#define HEAP_BASE  ((uintptr_t)&_ebss + CONFIG_IDLETHREAD_STACKSIZE)
+#define IDLE_STACK ((uintptr_t)&_sidle_stack + CONFIG_IDLETHREAD_STACKSIZE - 4)
+#define HEAP_BASE  ((uintptr_t)&_sint_heap)
 
 /****************************************************************************
  * Public data
  ****************************************************************************/
 
-const uintptr_t g_idle_topstack = (uintptr_t)&_ebss + CONFIG_IDLETHREAD_STACKSIZE;
+const uintptr_t g_idle_topstack = (uintptr_t)&_sidle_stack + CONFIG_IDLETHREAD_STACKSIZE;
 
 /****************************************************************************
  * Private Function prototypes
@@ -427,7 +427,7 @@ void __start(void)
 #ifdef CONFIG_STACK_COLORATION
 	/* Set the IDLE stack to the coloration value and jump into os_start() */
 
-	go_os_start((FAR void *)&_ebss, CONFIG_IDLETHREAD_STACKSIZE);
+	go_os_start((FAR void *)&_sidle_stack, CONFIG_IDLETHREAD_STACKSIZE);
 #else
 	/* Call os_start() */
 

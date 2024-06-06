@@ -27,6 +27,7 @@ typedef struct
 T_HCI_UART hci_rtk;
 T_HCI_UART *p_hci_rtk = &hci_rtk;
 
+uint8_t flag_for_hci_trx = 0;
 uint8_t g_hci_step = 0;
 extern HCI_PROCESS_TABLE hci_process_table[];
 extern uint8_t hci_total_step;
@@ -88,12 +89,17 @@ void hci_tp_close(void)
     return;
 }
 
-void hci_tp_del(void)
+void hci_tp_del(uint8_t param)
 {
-    HCI_PRINT_INFO0("hci_tp_del");
-    bt_power_off();
-    hci_uart_deinit();
-    return;
+    if (param == 0) {
+        flag_for_hci_trx = 1;
+    }
+    else if (param == 1) {
+        HCI_PRINT_INFO0("hci_tp_del");
+        bt_power_off();
+        hci_uart_deinit();
+        flag_for_hci_trx = 0;
+    }
 }
 
 bool hci_tp_send(uint8_t *p_buf, uint16_t len, P_HCI_TP_TX_CB tx_cb)
@@ -120,7 +126,7 @@ void hci_tp_config(uint8_t *p_buf, uint16_t len)
     if (pkt_type != HCI_EVT_PKT)
     {
         /* Skip non-hci event pkt. */
-        hci_board_debug("\r\nERROR:%s:packet type is %x\n",__FUNCTION__, pkt_type);
+        hci_board_debug("ERROR:%s:packet type is %x\n",__FUNCTION__, pkt_type);
         return;
     }
 
@@ -160,7 +166,7 @@ void hci_tp_config(uint8_t *p_buf, uint16_t len)
                             return;
                             break;
                         default:
-                            hci_board_debug("\r\n%s:unexpect status is %x\n",__FUNCTION__,ret);
+                            hci_board_debug("%s:unexpect status is %x\n",__FUNCTION__,ret);
                             break;
                     }
                 }
@@ -176,7 +182,7 @@ hci_tp_config_ok:
                 //dbg("-- [hci_tp_config_ok]  %p %d--\n", __builtin_return_address(0), g_hci_step);
                 if(g_hci_step == hci_total_step)
                 {
-                    hci_board_debug("\r\n%s:BT INIT success %x\n",__FUNCTION__,g_hci_step);
+                    hci_board_debug("%s:BT INIT success %x\n",__FUNCTION__,g_hci_step);
                     bte_init_buff_free();
                     if(hci_board_complete() == true)
                     {
@@ -203,27 +209,27 @@ hci_tp_config_ok:
                     }
                     else
                     {
-                        hci_board_debug("\r\nERROR:%s:start_pro is null %x\n",__FUNCTION__, g_hci_step);
+                        hci_board_debug("ERROR:%s:start_pro is null %x\n",__FUNCTION__, g_hci_step);
 
                     }
                 }
             }
             else
             {
-                hci_board_debug("\r\nERROR:%s:wrong status is %x, opcode is 0x%x\n",__FUNCTION__,
+                hci_board_debug("ERROR:%s:wrong status is %x, opcode is 0x%x\n",__FUNCTION__,
                         status,opcode);
             }
 
         }
         else
         {
-            hci_board_debug("\r\nERROR:%s:wrong type is %x\n",__FUNCTION__, opcode);
+            hci_board_debug("ERROR:%s:wrong type is %x\n",__FUNCTION__, opcode);
         }
 
     }
     else
     {
-        hci_board_debug("\r\nERROR:%s:unhandle evt is %x\n", __FUNCTION__ ,evt_code);
+        hci_board_debug("ERROR:%s:unhandle evt is %x\n", __FUNCTION__ ,evt_code);
     }
     return;
 

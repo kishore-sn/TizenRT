@@ -138,6 +138,39 @@ void irq_info(void);
 
 #endif
 
+#ifdef CONFIG_IRQCOUNT
+irqstate_t enter_critical_section(void);
+#else
+#  define enter_critical_section() irqsave()
+#endif
+
+#ifdef CONFIG_IRQCOUNT
+void leave_critical_section(irqstate_t flags);
+#else
+#  define leave_critical_section(f) irqrestore(f)
+#endif
+
+
+/****************************************************************************
+ * Name: restore_critical_section
+ *
+ * Description:
+ *   Restore the critical_section
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SMP
+void restore_critical_section(void);
+#else
+#  define restore_critical_section()
+#endif
+
 /**
  * @cond
  * @internal

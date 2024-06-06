@@ -22,6 +22,8 @@ import os
 import sys
 import struct
 import string
+import shutil
+import config_util as util
 
 cfg_path = os.path.dirname(__file__) + '/../.config'
 
@@ -42,27 +44,6 @@ def roundup_power_two(size):
 
     return size
 
-def get_config_value(file_name, config):
-    with open(file_name, 'r+') as fp:
-        lines = fp.readlines()
-        found = False
-        for line in lines:
-            if config in line:
-                value = (line.split("=")[1])
-                value = value.replace('"','').replace('\n','')
-                found = True
-                break
-    if found == False:
-        print ("FAIL!! No found config %s" %config)
-        sys.exit(1)
-    return int(value);
-
-def check_optimize_config(file_name):
-    with open(file_name, 'r+') as f:
-        lines = f.readlines()
-    
-    return any([True if 'CONFIG_OPTIMIZE_APP_RELOAD_TIME=y' in line and not line.startswith('#') else False for line in lines ])
-
 def get_static_ram_size(bin_type):
     # Calculate static RAM size
     textsize = 0
@@ -71,7 +52,7 @@ def get_static_ram_size(bin_type):
     bsssize = 0
     if bin_type == ELF :
         # Static RAM size : Extract from readelf command in linux(ONLY for elf)
-        os.system('readelf -S ' + file_path + ' > ' + STATIC_RAM_ESTIMATION)
+        os.system('readelf -S ' + file_path + '_dbg > ' + STATIC_RAM_ESTIMATION)
         ram_fp = open(STATIC_RAM_ESTIMATION, 'rb')
         line = ram_fp.readline()
         while line:
@@ -94,7 +75,7 @@ def get_static_ram_size(bin_type):
         # If CONFIG_OPTIMIZE_APP_RELOAD_TIME is enabled, then we will make a copy
         # of the data section inside the ro section and it will be used in
         # reload time. So, we add datasize to rosize to make place for data section.
-        if check_optimize_config(cfg_path) == True:
+        if util.check_config_existence(cfg_path, 'CONFIG_OPTIMIZE_APP_RELOAD_TIME=y') == True:
             rosize = rosize + datasize;
             rosize = roundup_power_two(rosize)
             textsize = roundup_power_two(textsize)
@@ -139,12 +120,14 @@ def make_kernel_binary_header():
     header_size = SIZE_OF_HEADERSIZE + SIZE_OF_BINVER + SIZE_OF_BINSIZE + SIZE_OF_SECURE_HEADER_SIZE
 
     # Get binary version
-    bin_ver = get_config_value(cfg_path, "CONFIG_BOARD_BUILD_DATE=")
-    if bin_ver < 0 :
+    bin_ver = util.get_value_from_file(cfg_path, "CONFIG_BOARD_BUILD_DATE=").replace('"','').replace('\n','')
+    if bin_ver == 'None' :
         print("Error : Not Found config for version, CONFIG_BOARD_BUILD_DATE")
         sys.exit(1)
-    elif bin_ver < 101 or bin_ver > 991231 :
-        print("Error : Invalid value. It has 'YYMMDD' format so it should be in (101, 991231)")
+    bin_ver = int(bin_ver)
+    if bin_ver < 101 or bin_ver > 991231 :
+        print("Error : Invalid Kernel Binary Version, ",bin_ver,".")
+        print("        Please check CONFIG_BOARD_BUILD_DATE with 'YYMMDD' format in (101, 991231)")
         sys.exit(1)
 
     with open(file_path, 'rb') as fp:
@@ -168,55 +151,48 @@ def make_kernel_binary_header():
 #
 # User binary header information on APP_BINARY_SEPARTION
 #
-# total header size is 42bytes.
-# +--------------------------------------------------------------------------------
-# | Header size | Binary type | Compression  | Binary priority | Loading priority |
-# |   (2bytes)  |   (1byte)   |   (1byte)    |     (1byte)     |      (1bytes)    |
-# +--------------------------------------------------------------------------------
+# total header size is 41bytes (CONFIG_ELF) or 44bytes (CONFIG_XIP_ELF).
+# +-----------------------------------------------------------------
+# | Header size | Binary type | Binary priority | Loading priority |
+# |   (2bytes)  |   (1byte)   |     (1byte)     |      (1bytes)    |
+# +-----------------------------------------------------------------
 # -------------------------------------------------------------------------------------
 # | Binary size |  Binary name | Binary version | Binary ram size | Binary stack size |
 # |  (4bytes)   |   (16bytes)  |    (4bytes)    |    (4bytes)     |     (4bytes)      |
 # -------------------------------------------------------------------------------------
-# -----------------+
-# | Kernel Version |
-# |  (4bytes)      |
-# -----------------+
+# -----------------------------------------------------+
+# | Kernel Version | Padding (Only for CONFIG_XIP_ELF) |
+# |  (4bytes)      |          (3bytes)                 |
+# -----------------------------------------------------+
 #
 # parameter information :
 #
 # argv[1] is file path of binary file.
 # argv[2] is binary type.
 # argv[3] is binary format.
-# argv[4] is kernel version.
-# argv[5] is binary name.
-# argv[6] is binary version.
-# argv[7] is a dynamic ram size required to run this binary.
-# argv[8] is main task stack size.
-# argv[9] is main task priority.
-# argv[10] is compression type
-# argv[11] is block size for compression
-# argv[12] is a loading priority.
+# argv[4] is binary name.
+# argv[5] is binary version.
+# argv[6] is a dynamic ram size required to run this binary.
+# argv[7] is main task stack size.
+# argv[8] is main task priority.
+# argv[9] is a loading priority.
 #
 ############################################################################
 
 def make_user_binary_header():
     binary_format = sys.argv[3]
-    kernel_ver = sys.argv[4]
-    binary_name = sys.argv[5]
-    binary_ver = sys.argv[6]
-    dynamic_ram_size = sys.argv[7]
-    main_stack_size = sys.argv[8]
-    main_priority = sys.argv[9]
-    comp_enabled = sys.argv[10]
-    comp_blk_size = sys.argv[11]
-    loading_priority = sys.argv[12]
+    binary_name = sys.argv[4]
+    binary_ver = sys.argv[5]
+    dynamic_ram_size = sys.argv[6]
+    main_stack_size = sys.argv[7]
+    main_priority = sys.argv[8]
+    loading_priority = sys.argv[9]
 
     # Path to directory of this file
     mkbinheader_path = os.path.dirname(__file__)
 
     SIZE_OF_HEADERSIZE = 2
     SIZE_OF_BINTYPE = 1
-    SIZE_OF_COMFLAG = 1
     SIZE_OF_MAINPRIORITY = 1
     SIZE_OF_LOADINGPRIORITY = 1
     SIZE_OF_BINSIZE = 4
@@ -226,12 +202,13 @@ def make_user_binary_header():
     SIZE_OF_MAINSTACKSIZE = 4
     SIZE_OF_KERNELVER = 4
 
-    header_size = SIZE_OF_HEADERSIZE + SIZE_OF_BINTYPE + SIZE_OF_COMFLAG + SIZE_OF_MAINPRIORITY + SIZE_OF_LOADINGPRIORITY + SIZE_OF_BINSIZE + SIZE_OF_BINNAME + SIZE_OF_BINVER + SIZE_OF_BINRAMSIZE + SIZE_OF_MAINSTACKSIZE + SIZE_OF_KERNELVER
+    header_size = SIZE_OF_HEADERSIZE + SIZE_OF_BINTYPE + SIZE_OF_MAINPRIORITY + SIZE_OF_LOADINGPRIORITY + SIZE_OF_BINSIZE + SIZE_OF_BINNAME + SIZE_OF_BINVER + SIZE_OF_BINRAMSIZE + SIZE_OF_MAINSTACKSIZE + SIZE_OF_KERNELVER
 
-    COMP_NONE = 0
-    COMP_LZMA = 1
-    COMP_MINIZ = 2
-    COMP_MAX = COMP_MINIZ
+    xip_elf = util.get_value_from_file(cfg_path, "CONFIG_XIP_ELF=").replace('"','').replace('\n','')
+    if xip_elf != 'None' :
+        #add padding so the linker script start address aligns with 32bit/4byte
+        SIZE_OF_PADDING = 3
+        header_size = header_size + SIZE_OF_PADDING
 
     # Loading priority
     LOADING_LOW = 1
@@ -251,10 +228,10 @@ def make_user_binary_header():
         print("Dynamic ram size : %d, Main stack size : %d" %(int(dynamic_ram_size), int(main_stack_size)))
         sys.exit(1)
 
-    priority = get_config_value(cfg_path, "CONFIG_BM_PRIORITY_MAX=")
+    priority = int(util.get_value_from_file(cfg_path, "CONFIG_BM_PRIORITY_MAX=").replace('"','').replace('\n',''))
     if priority > 0 :
         BM_PRIORITY_MAX = priority
-    priority = get_config_value(cfg_path, "CONFIG_BM_PRIORITY_MIN=")
+    priority = int(util.get_value_from_file(cfg_path, "CONFIG_BM_PRIORITY_MIN=").replace('"','').replace('\n',''))
     if priority > 0 :
         BM_PRIORITY_MIN = priority
 
@@ -288,47 +265,27 @@ def make_user_binary_header():
             sys.exit(1)
 
         static_ram_size = get_static_ram_size(bin_type)
-        if check_optimize_config(cfg_path) == True:
+        if util.check_config_existence(cfg_path, 'CONFIG_OPTIMIZE_APP_RELOAD_TIME=y') == True:
             binary_ram_size = int(dynamic_ram_size)
         else:
             binary_ram_size = int(static_ram_size) + int(dynamic_ram_size)
             binary_ram_size = roundup_power_two(binary_ram_size)
 
         # Get kernel binary version
-        kernel_ver = get_config_value(cfg_path, "CONFIG_BOARD_BUILD_DATE=")
-        if kernel_ver < 0 :
+        kernel_ver = util.get_value_from_file(cfg_path, "CONFIG_BOARD_BUILD_DATE=").replace('"','').replace('\n','')
+        if kernel_ver == 'None' :
             print("Error : Not Found config for kernel version, CONFIG_BOARD_BUILD_DATE")
             sys.exit(1)
-        elif kernel_ver < 101 or kernel_ver > 991231 :
-            print("Error : Invalid value. It has 'YYMMDD' format so it should be in (101, 991231)")
+        kernel_ver = int(kernel_ver)
+        if kernel_ver < 101 or kernel_ver > 991231 :
+            print("Error : Invalid Kernel Binary Version, ",kernel_ver,".")
+            print("        Please check CONFIG_BOARD_BUILD_DATE with 'YYMMDD' format in (101, 991231)")
             sys.exit(1)
-
-        # based on comp_enabled, check if we need to compress binary.
-        # If yes, assign to bin_comp value for compression algorithm to use.
-        # Else, assign 0 to bin_comp to represent no compression
-        if 0 < int(comp_enabled) <= COMP_MAX :
-            bin_comp = int(comp_enabled)
-        else :
-            bin_comp = 0
-
-        # Compress data according to Compression Algorithm represented by bin_comp
-        # Run mkcompressimg tool with provided options. Read output compressed file into data.
-        if bin_comp > COMP_NONE :
-            fp_tmp = open("tmp", 'wb+')
-            fp_tmp.write(data)
-            fp_tmp.close()
-            os.system(mkbinheader_path + '/compression/mkcompressimg ' + comp_blk_size + ' ' + comp_enabled + ' tmp' + ' tmp_comp')
-            fp_tmp = open("tmp_comp", 'rb')
-            data = fp_tmp.read()
-            file_size = fp_tmp.tell()
-            fp_tmp.close()
-            os.system('rm tmp tmp_comp')
 
         fp = open(file_path, 'wb')
 
         fp.write(struct.pack('H', header_size))
         fp.write(struct.pack('B', bin_type))
-        fp.write(struct.pack('B', bin_comp))
         fp.write(struct.pack('B', main_priority))
         fp.write(struct.pack('B', loading_priority))
         fp.write(struct.pack('I', file_size))
@@ -337,9 +294,74 @@ def make_user_binary_header():
         fp.write(struct.pack('I', binary_ram_size))
         fp.write(struct.pack('I', int(main_stack_size)))
         fp.write(struct.pack('I', int(kernel_ver)))
+        if xip_elf != 'None' :
+            #add padding so the linker script start address aligns with 32bit/4byte
+            fp.write(struct.pack('BBB', 0, 0, 0))
         fp.write(data)
 
         fp.close()
+
+
+############################################################################
+#
+# Common binary header information :
+#
+# total header size is 10 bytes (CONFIG_ELF) or 12 bytes (CONFIG_XIP_ELF).
+# +---------------------------------------------------------------------------------+
+# | Header size | Binary Version |  Binary Size | Padding (Only for CONFIG_XIP_ELF) |
+# |   (2bytes)  |    (4bytes)    |   (4bytes)   |           (2bytes)                |
+# +---------------------------------------------------------------------------------+
+#
+# parameter information :
+#
+# argv[1] is file path of binary file.
+# argv[2] is binary type.
+# argv[3] is binary version.
+#
+###########################################################################
+def make_common_binary_header():
+
+    SIZE_OF_HEADERSIZE = 2
+    SIZE_OF_BINVER = 4
+    SIZE_OF_BINSIZE = 4
+
+    # Calculate binary header size
+    header_size = SIZE_OF_HEADERSIZE + SIZE_OF_BINVER + SIZE_OF_BINSIZE
+
+    # Get binary version
+    bin_ver = util.get_value_from_file(cfg_path, "CONFIG_COMMON_BINARY_VERSION=").replace('"','').replace('\n','')
+    if bin_ver == 'None' :
+        print("Error : Not Found config for Common binary version, CONFIG_COMMON_BINARY_VERSION")
+        sys.exit(1)
+    bin_ver = int(bin_ver)
+    if bin_ver < 101 or bin_ver > 991231 :
+        print("Error : Invalid Common Binary Version, ",bin_ver,".")
+        print("        Please check CONFIG_COMMON_BINARY_VERSION with 'YYMMDD' format in (101, 991231)")
+        sys.exit(1)
+
+    xip_elf = util.get_value_from_file(cfg_path, "CONFIG_XIP_ELF=").replace('"','').replace('\n','')
+    if xip_elf != 'None' :
+        #add padding so the linker script start address aligns with 32bit/4byte
+        SIZE_OF_PADDING = 2
+        header_size = header_size + SIZE_OF_PADDING
+
+    with open(file_path, 'rb') as fp:
+        # binary data copy to 'data'
+        data = fp.read()
+        file_size = fp.tell()
+        fp.close()
+
+        fp = open(file_path, 'wb')
+
+        # Generate binary with header data
+        fp.write(struct.pack('H', header_size))
+        fp.write(struct.pack('I', int(bin_ver)))
+        fp.write(struct.pack('I', file_size))
+        xip_elf = util.get_value_from_file(cfg_path, "CONFIG_XIP_ELF=").replace('"','').replace('\n','')
+        if xip_elf != 'None' :
+            #add padding so the linker script start address aligns with 32bit/4byte
+            fp.write(struct.pack('H', 0))
+        fp.write(data)
 
 ############################################################################
 #
@@ -348,10 +370,17 @@ def make_user_binary_header():
 ############################################################################
 file_path  = sys.argv[1]
 binary_type = sys.argv[2]
+
+# copy orignal binary to (filename)_without_header.(ext)
+file_path_without_header = os.path.splitext(file_path)[0] + "_without_header" + os.path.splitext(file_path)[1]
+shutil.copyfile(file_path, file_path_without_header)
+
 if binary_type == 'kernel' :
     make_kernel_binary_header()
 elif binary_type == 'user' :
     make_user_binary_header()
+elif binary_type == 'common' :
+    make_common_binary_header()
 else : # Not supported.
     print("Error : Not supported Binary Type")
     sys.exit(1)

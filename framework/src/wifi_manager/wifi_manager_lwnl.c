@@ -25,7 +25,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <errno.h>
-#include <debug.h>
 #include <net/if.h>
 #include <tinyara/lwnl/lwnl.h>
 #include <tinyara/net/if/wifi.h>
@@ -156,6 +155,21 @@ trwifi_result_e wifi_utils_ioctl(trwifi_msg_s *dmsg)
 	trwifi_result_e res = TRWIFI_SUCCESS;
 	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_IOCTL},
 					sizeof(trwifi_msg_s), (void *)dmsg, (void *)&res};
+	if (_send_msg(&msg) < 0) {
+		return TRWIFI_FAIL;
+	}
+	return res;
+}
+
+trwifi_result_e wifi_utils_scan_multi_aps(void *arg)
+{
+	trwifi_result_e res = TRWIFI_SUCCESS;
+	trwifi_scan_multi_configs_s *configs = NULL;
+	if (arg) {
+		configs = (trwifi_scan_multi_configs_s *)arg;
+	}
+	lwnl_msg msg = {WU_INTF_NAME, {LWNL_REQ_WIFI_SCAN_MULTI_APS},
+					sizeof(trwifi_scan_multi_configs_s), (void *)configs, (void *)&res};
 	if (_send_msg(&msg) < 0) {
 		return TRWIFI_FAIL;
 	}

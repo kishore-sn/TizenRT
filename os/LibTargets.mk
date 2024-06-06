@@ -58,19 +58,19 @@
 # Possible kernel-mode builds
 
 libc$(DELIM)libkc$(LIBEXT): context
-	$(Q) $(MAKE) -C $(LIB_DIR)$(DELIM)libc TOPDIR="$(TOPDIR)" libkc$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)
+	$(Q) $(MAKE) -C $(LIB_DIR)$(DELIM)libc TOPDIR="$(TOPDIR)" libkc$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE) BIN=libkc$(LIBEXT) BINDIR=kbin
 
 $(LIBRARIES_DIR)$(DELIM)libkc$(LIBEXT): libc$(DELIM)libkc$(LIBEXT)
 	$(Q) install $(LIB_DIR)$(DELIM)libc$(DELIM)libkc$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libkc$(LIBEXT)
 
 mm$(DELIM)libkmm$(LIBEXT): context
-	$(Q) $(MAKE) -C mm TOPDIR="$(TOPDIR)" libkmm$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)
+	$(Q) $(MAKE) -C mm TOPDIR="$(TOPDIR)" libkmm$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE) BIN=libkmm$(LIBEXT) BINDIR=kbin
 
 $(LIBRARIES_DIR)$(DELIM)libkmm$(LIBEXT): mm$(DELIM)libkmm$(LIBEXT)
 	$(Q) install mm$(DELIM)libkmm$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libkmm$(LIBEXT)
 
 wqueue$(DELIM)libkwque$(LIBEXT): context
-	$(Q) $(MAKE) -C wqueue TOPDIR="$(TOPDIR)" libkwque$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)
+	$(Q) $(MAKE) -C wqueue TOPDIR="$(TOPDIR)" libkwque$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE) BIN=libkwque$(LIBEXT) BINDIR=kbin
 
 $(LIBRARIES_DIR)$(DELIM)libkwque$(LIBEXT): wqueue$(DELIM)libkwque$(LIBEXT)
 	$(Q) install wqueue$(DELIM)libkwque$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libkwque$(LIBEXT)
@@ -160,19 +160,19 @@ $(LIBRARIES_DIR)$(DELIM)libstubs$(LIBEXT): syscall$(DELIM)libstubs$(LIBEXT)
 # Possible user-mode builds
 
 libc$(DELIM)libuc$(LIBEXT): context
-	$(Q) $(MAKE) -C $(LIB_DIR)$(DELIM)libc TOPDIR="$(TOPDIR)" libuc$(LIBEXT) KERNEL=n
+	$(Q) $(MAKE) -C $(LIB_DIR)$(DELIM)libc TOPDIR="$(TOPDIR)" libuc$(LIBEXT) KERNEL=n BIN=libuc$(LIBEXT) BINDIR=ubin
 
 $(LIBRARIES_DIR)$(DELIM)libuc$(LIBEXT): libc$(DELIM)libuc$(LIBEXT)
 	$(Q) install $(LIB_DIR)$(DELIM)libc$(DELIM)libuc$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libuc$(LIBEXT)
 
 mm$(DELIM)libumm$(LIBEXT): context
-	$(Q) $(MAKE) -C mm TOPDIR="$(TOPDIR)" libumm$(LIBEXT) KERNEL=n
+	$(Q) $(MAKE) -C mm TOPDIR="$(TOPDIR)" libumm$(LIBEXT) KERNEL=n BIN=libumm$(LIBEXT) BINDIR=ubin
 
 $(LIBRARIES_DIR)$(DELIM)libumm$(LIBEXT): mm$(DELIM)libumm$(LIBEXT)
 	$(Q) install mm$(DELIM)libumm$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libumm$(LIBEXT)
 
 wqueue$(DELIM)libuwque$(LIBEXT): context
-	$(Q) $(MAKE) -C wqueue TOPDIR="$(TOPDIR)" libuwque$(LIBEXT) KERNEL=n
+	$(Q) $(MAKE) -C wqueue TOPDIR="$(TOPDIR)" libuwque$(LIBEXT) KERNEL=n BIN=libuwque$(LIBEXT) BINDIR=ubin
 
 $(LIBRARIES_DIR)$(DELIM)libuwque$(LIBEXT): wqueue$(DELIM)libuwque$(LIBEXT)
 	$(Q) install wqueue$(DELIM)libuwque$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libuwque$(LIBEXT)
@@ -274,68 +274,3 @@ $(ARCH_SRC)$(DELIM)libarch$(LIBEXT): context
 $(LIBRARIES_DIR)$(DELIM)libarch$(LIBEXT): $(ARCH_SRC)$(DELIM)libarch$(LIBEXT)
 	$(Q) install $(ARCH_SRC)$(DELIM)libarch$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libarch$(LIBEXT)
 
-# External WICED Lib builds
-ifeq ($(CONFIG_WL_BCM4390X),y)
-$(LIBRARIES_DIR)$(DELIM)libbcmexternal$(LIBEXT): $(EXTDIR)$(DELIM)WICED$(DELIM)libbcmexternal$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)WICED$(DELIM)libbcmexternal$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libbcmexternal$(LIBEXT)
-endif
-
-ifeq ($(CONFIG_RTK_WLAN),y)
-$(LIBRARIES_DIR)$(DELIM)librtl$(LIBEXT): $(TOPDIR)$(DELIM)drivers$(DELIM)wireless$(DELIM)realtek$(DELIM)librtl$(LIBEXT)
-	$(Q) install $(TOPDIR)$(DELIM)drivers$(DELIM)wireless$(DELIM)realtek$(DELIM)librtl$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)librtl$(LIBEXT)
-endif
-
-ifeq ($(CONFIG_AMEBAD_WIFI),y)
-ifeq ($(CONFIG_ARCH_FPU),y)
-$(LIBRARIES_DIR)$(DELIM)lib_wlan$(LIBEXT): $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wlan_fpu$(LIBEXT)
-	$(Q) install $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wlan_fpu$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)lib_wlan$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)lib_wps$(LIBEXT): $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wps_fpu$(LIBEXT)
-	$(Q) install $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wps_fpu$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)lib_wps$(LIBEXT)
-else
-$(LIBRARIES_DIR)$(DELIM)lib_wlan$(LIBEXT): $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wlan$(LIBEXT)
-	$(Q) install $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wlan$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)lib_wlan$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)lib_wps$(LIBEXT): $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wps$(LIBEXT)
-	$(Q) install $(TOPDIR)$(DELIM)board$(DELIM)rtl8721csm$(DELIM)src$(DELIM)libs$(DELIM)lib_wps$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)lib_wps$(LIBEXT)
-endif
-endif
-
-# External esp32 wifi static Lib builds
-ifeq ($(CONFIG_ESP32_WIFI_SUPPORT),y)
-$(LIBRARIES_DIR)$(DELIM)libcoexist$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libcoexist$(LIBEXT)
-	$(Q)install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libcoexist$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libcoexist$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libcore$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libcore$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libcore$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libcore$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libespnow$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libespnow$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libespnow$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libespnow$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libmesh$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libmesh$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libmesh$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libmesh$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libnet80211$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libnet80211$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libnet80211$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libnet80211$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libphy$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libphy$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libphy$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libphy$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libpp$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libpp$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libpp$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libpp$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)librtc$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)librtc$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)librtc$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)librtc$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libsmartconfig$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libsmartconfig$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libsmartconfig$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libsmartconfig$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libwpa2$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libwpa2$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libwpa2$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libwpa2$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libwpa$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libwpa$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libwpa$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libwpa$(LIBEXT)
-
-$(LIBRARIES_DIR)$(DELIM)libwps$(LIBEXT): $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libwps$(LIBEXT)
-	$(Q) install $(EXTDIR)$(DELIM)esp_idf_port/esp32$(DELIM)lib$(DELIM)libwps$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libwps$(LIBEXT)
-endif

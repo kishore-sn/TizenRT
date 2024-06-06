@@ -258,6 +258,10 @@ int pthread_create(FAR pthread_t *thread, FAR const pthread_attr_t *attr, pthrea
 	bool group_joined = false;
 #endif
 
+#ifdef CONFIG_APP_BINARY_SEPARATION
+	ASSERT((sched_self()->flags & TCB_FLAG_TTYPE_MASK) != TCB_FLAG_TTYPE_KERNEL);
+#endif
+
 	trace_begin(TTRACE_TAG_TASK, "pthread_create");
 
 	/* Check whether we are allowed to create new pthread ? */
@@ -370,11 +374,25 @@ int pthread_create(FAR pthread_t *thread, FAR const pthread_attr_t *attr, pthrea
 	}
 
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
-	/* Update the pid information in stack node */
-	struct mm_allocnode_s *node;
+	/* Exclude a stack node from heap usages of current thread.
+	 * This will be shown separately as stack usages.
+	 */
+	heapinfo_exclude_stacksize(ptcb->cmn.stack_alloc_ptr);
+	/* Update the pid information to set a stack node */
+	heapinfo_set_stack_node(ptcb->cmn.stack_alloc_ptr, ptcb->cmn.pid);
+#endif
 
-	node = (struct mm_allocnode_s *)(ptcb->cmn.stack_alloc_ptr - SIZEOF_MM_ALLOCNODE);
-	node->pid = (-1) * (ptcb->cmn.pid);
+#ifdef CONFIG_SMP
+	/* pthread_schedsetup() will set the affinity mask by inheriting the
+	 * setting from the parent task. We need to override this setting
+	 * with the value from the pthread attributes unless that value is
+	 * zero: Zero is the default value and simply means yo inherit the
+	 * parent thread's affinity mask
+	 */
+
+	if (attr->affinity != 0) {
+		ptcb->cmn.affinity = attr->affinity;
+	}
 #endif
 
 	/* Configure the TCB for a pthread receiving on parameter
@@ -451,6 +469,11 @@ int pthread_create(FAR pthread_t *thread, FAR const pthread_attr_t *attr, pthrea
 
 	sched_lock();
 	if (ret == OK) {
+#if defined(CONFIG_BINARY_MANAGER) && defined(CONFIG_APP_BINARY_SEPARATION)
+		/* Add tcb to binary thread list */
+
+		binary_manager_add_binlist(&ptcb->cmn);
+#endif
 		ret = task_activate((FAR struct tcb_s *)ptcb);
 	}
 
@@ -470,11 +493,6 @@ int pthread_create(FAR pthread_t *thread, FAR const pthread_attr_t *attr, pthrea
 		if (!pjoin->started) {
 			ret = EINVAL;
 		}
-
-#if defined(CONFIG_BINARY_MANAGER) && defined(CONFIG_APP_BINARY_SEPARATION)
-		/* Add tcb to binary thread list */
-		binary_manager_add_binlist(&ptcb->cmn);
-#endif
 		sched_unlock();
 		(void)sem_destroy(&pjoin->data_sem);
 	} else {

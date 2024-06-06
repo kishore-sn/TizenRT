@@ -175,22 +175,12 @@ int elf_loaddtors(FAR struct elf_loadinfo_s *loadinfo)
 		if ((shdr->sh_flags & SHF_ALLOC) == 0) {
 			/* Allocate memory to hold a copy of the .dtor section */
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
-#ifdef CONFIG_DEBUG_MM_HEAPINFO
-			ARCH_GET_RET_ADDRESS
-			loadinfo->dtoralloc = (binfmt_dtor_t *)mm_malloc(loadinfo->uheap, dtorsize, retaddr);
-#else
-			loadinfo->dtoralloc = (binfmt_dtor_t *)mm_malloc(loadinfo->uheap, dtorsize);
-#endif
-#else
-			loadinfo->dtoralloc = (binfmt_dtor_t *)kumm_malloc(dtorsize);
-#endif
-			if (!loadinfo->dtoralloc) {
+			loadinfo->dtors = (binfmt_dtor_t *)kmm_malloc(dtorsize);
+			if (!loadinfo->dtors)
+			{
 				berr("Failed to allocate memory for .dtors\n");
 				return -ENOMEM;
 			}
-
-			loadinfo->dtors = (binfmt_dtor_t *)loadinfo->dtoralloc;
 
 			/* Read the section header table into memory */
 
@@ -208,9 +198,9 @@ int elf_loaddtors(FAR struct elf_loadinfo_s *loadinfo)
 			for (i = 0; i < loadinfo->ndtors; i++) {
 				FAR uintptr_t *ptr = (uintptr_t *)((FAR void *)(&loadinfo->dtors)[i]);
 
-				binfo("dtor %d: %08lx + %08lx = %08lx\n", i, *ptr, (unsigned long)loadinfo->textalloc, (unsigned long)(*ptr + loadinfo->textalloc));
+				binfo("dtor %d: %08lx + %08lx = %08lx\n", i, *ptr, (unsigned long)loadinfo->binp->sections[BIN_TEXT], (unsigned long)(*ptr + loadinfo->binp->sections[BIN_TEXT]));
 
-				*ptr += loadinfo->textalloc;
+				*ptr += loadinfo->binp->sections[BIN_TEXT];
 			}
 		} else {
 

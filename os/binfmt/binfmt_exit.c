@@ -59,11 +59,9 @@
 #include <sys/types.h>
 #include <assert.h>
 #include <debug.h>
-#ifdef CONFIG_APP_BINARY_SEPARATION
 #include <queue.h>
 #ifdef CONFIG_SAVE_BIN_SECTION_ADDR
 #include "libelf/libelf.h"
-#endif
 #endif
 
 #include <tinyara/mm/mm.h>
@@ -73,9 +71,7 @@
 #include "binfmt.h"
 
 #ifdef CONFIG_BINFMT_LOADABLE
-#ifdef CONFIG_APP_BINARY_SEPARATION
 extern volatile sq_queue_t g_delayed_kufree;
-#endif
 
 /****************************************************************************
  * Public Functions
@@ -103,12 +99,11 @@ extern volatile sq_queue_t g_delayed_kufree;
 int binfmt_exit(FAR struct binary_s *bin)
 {
 	int ret;
-#ifdef CONFIG_APP_BINARY_SEPARATION
 	irqstate_t flags;
 	FAR void *address;
 	uint32_t uheap_start;
 	uint32_t uheap_end;
-#endif
+
 	DEBUGASSERT(bin != NULL);
 
 	/* Unload the module */
@@ -118,27 +113,24 @@ int binfmt_exit(FAR struct binary_s *bin)
 		berr("ERROR: unload_module() failed: %d\n", ret);
 	}
 
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-	elf_delete_bin_section_addr(bin);
-#endif
+	elf_delete_bin_section_addr(bin->binary_idx);
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
 	uheap_start = (uint32_t)bin->uheap;
-	uheap_end = uheap_start + bin->uheap_size;
+	uheap_end = uheap_start + bin->sizes[BIN_HEAP];
 
 	/* Remove resources which in binary to be unloaded from delayed deallocation. */
 	address = sq_peek(&g_delayed_kufree);
 	while (address) {
 		mllvdbg("Remove addr %p from deplaed kufree, uheap (%p, %p)\n", address, uheap_start, uheap_end);
 		if (uheap_start <= (uint32_t)address && (uint32_t)address <= uheap_end) {
-			flags = irqsave();
+			flags = enter_critical_section();
 			sq_rem((FAR sq_entry_t *)address, (FAR sq_queue_t *)&g_delayed_kufree);
-			irqrestore(flags);
+			leave_critical_section(flags);
 		}
 		address = (FAR void *)sq_next((FAR sq_entry_t *)address);
 	}
 	mm_disable_app_heap_list(bin->uheap);
-#endif
+
 	/* Free the load structure */
 
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
@@ -147,6 +139,7 @@ int binfmt_exit(FAR struct binary_s *bin)
 		mm_remove_app_heap_list(bin->uheap);
 		/* Free the RAM partition into which this app was loaded */
 		kmm_free((void *)bin->ramstart);
+		bin->ramstart = NULL;
 		kmm_free(bin);
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
 	}

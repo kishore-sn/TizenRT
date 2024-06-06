@@ -28,7 +28,6 @@ CXXSRCS =
 VPATH = .
 
 # Framework Directories
-
 # BUILDIRS is the list of top-level directories containing Make.defs files
 
 BUILDIRS   := $(dir $(wildcard src/*/Make.defs))

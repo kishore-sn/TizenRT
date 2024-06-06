@@ -57,6 +57,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <tinyara/sched.h>
+#include <tinyara/arch.h>
 #include <tinyara/mm/mm.h>
 
 /****************************************************************************
@@ -129,6 +130,47 @@ void heapinfo_update_node(FAR struct mm_allocnode_s *node, mmaddress_t caller_re
 }
 
 /****************************************************************************
+ * Name: heapinfo_set_caller_addr
+ *
+ * Description:
+ * Set caller address of malloc API to mem chunk
+ * It is only called in DEBUG_SET_CALLER_ADDR macro
+ ****************************************************************************/
+void heapinfo_set_caller_addr(void *address, mmaddress_t caller_retaddr)
+{
+	struct mm_allocnode_s *node;
+	struct mm_heap_s *heap;
+
+	heap = mm_get_heap(address);
+	if (heap) {
+		node = (struct mm_allocnode_s *)((char *)address - SIZEOF_MM_ALLOCNODE);
+		DEBUGASSERT(mm_takesemaphore(heap));
+		heapinfo_update_node(node, caller_retaddr);
+		mm_givesemaphore(heap);
+	} else {
+		mdbg("Failed to set caller address, heap not found. addr:%x\n", address);
+	}
+
+}
+
+/****************************************************************************
+ * Name: heapinfo_set_stack_node
+ *
+ * Description:
+ * This function sets a heap node as a stack node by setting negative value in the pid value.
+ * This function requires allocated stack pointer and assigned pid value.
+ ****************************************************************************/
+void heapinfo_set_stack_node(void *stack_ptr, pid_t pid)
+{
+	struct mm_allocnode_s *node;
+
+	node = (struct mm_allocnode_s *)(stack_ptr - SIZEOF_MM_ALLOCNODE);
+
+	DEBUGASSERT(node && pid > 0);
+	node->pid = (-1) * (pid);
+}
+
+/****************************************************************************
  * Name: heapinfo_exclude_stacksize
  *
  * Description:
@@ -195,5 +237,38 @@ void heapinfo_dealloc_tcbinfo(void *address, pid_t pid)
 		heap->alloc_list[hash_pid].curr_alloc_size = 0;
 		heap->alloc_list[hash_pid].peak_alloc_size = 0;
 		heap->alloc_list[hash_pid].num_alloc_free = 0;
+	}
+}
+
+/************************************************************************
+ * Name: heapinfo_dump_heap
+ *
+ * Description: Print the hex value contents of heap.
+ ************************************************************************/
+void heapinfo_dump_heap(struct mm_heap_s *heap)
+{
+#if CONFIG_KMM_REGIONS > 1
+	int region;
+#else
+#define region 0
+#endif
+#if CONFIG_KMM_REGIONS > 1
+	for (region = 0; region < heap->mm_nregions; region++)
+#endif
+	{
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+		if (!abort_mode && !up_interrupt_context())
+#endif
+		{
+			DEBUGASSERT(mm_takesemaphore(heap));
+		}
+
+		mm_dump_heap_region((uint32_t)(heap->mm_heapstart[region]), (uint32_t)(heap->mm_heapend[region]) + SIZEOF_MM_ALLOCNODE);
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+		if (!abort_mode && !up_interrupt_context())
+#endif
+		{
+			mm_givesemaphore(heap);
+		}
 	}
 }

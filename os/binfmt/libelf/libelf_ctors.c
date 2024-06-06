@@ -175,22 +175,11 @@ int elf_loadctors(FAR struct elf_loadinfo_s *loadinfo)
 		if ((shdr->sh_flags & SHF_ALLOC) == 0) {
 			/* Allocate memory to hold a copy of the .ctor section */
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
-#ifdef CONFIG_DEBUG_MM_HEAPINFO
-			ARCH_GET_RET_ADDRESS
-			loadinfo->ctoralloc = (binfmt_ctor_t *)mm_malloc(loadinfo->uheap, ctorsize, retaddr);
-#else
-			loadinfo->ctoralloc = (binfmt_ctor_t *)mm_malloc(loadinfo->uheap, ctorsize);
-#endif
-#else
-			loadinfo->ctoralloc = (binfmt_ctor_t *)kumm_malloc(ctorsize);
-#endif
-			if (!loadinfo->ctoralloc) {
+			loadinfo->ctors = (binfmt_ctor_t *)kmm_malloc(ctorsize);
+			if (!loadinfo->ctors) {
 				berr("Failed to allocate memory for .ctors\n");
 				return -ENOMEM;
 			}
-
-			loadinfo->ctors = (binfmt_ctor_t *)loadinfo->ctoralloc;
 
 			/* Read the section header table into memory */
 
@@ -208,9 +197,9 @@ int elf_loadctors(FAR struct elf_loadinfo_s *loadinfo)
 			for (i = 0; i < loadinfo->nctors; i++) {
 				FAR uintptr_t *ptr = (uintptr_t *)((FAR void *)(&loadinfo->ctors)[i]);
 
-				binfo("ctor %d: %08lx + %08lx = %08lx\n", i, *ptr, (unsigned long)loadinfo->textalloc, (unsigned long)(*ptr + loadinfo->textalloc));
+				binfo("ctor %d: %08lx + %08lx = %08lx\n", i, *ptr, (unsigned long)loadinfo->binp->sections[BIN_TEXT], (unsigned long)(*ptr + loadinfo->binp->sections[BIN_TEXT]));
 
-				*ptr += loadinfo->textalloc;
+				*ptr += loadinfo->binp->sections[BIN_TEXT];
 			}
 		} else {
 

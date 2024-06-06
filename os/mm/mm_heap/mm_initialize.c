@@ -173,6 +173,9 @@ int mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart, size_t heapsiz
 	node            = (FAR struct mm_freenode_s *)(heapbase + SIZEOF_MM_ALLOCNODE);
 	node->size      = heapsize - 2 * SIZEOF_MM_ALLOCNODE;
 	node->preceding = SIZEOF_MM_ALLOCNODE;
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	heapinfo_update_node((FAR struct mm_allocnode_s *)node, 0xDEADDEAD);
+#endif
 
 	heap->mm_heapend[IDX]            = (FAR struct mm_allocnode_s *)(heapend - SIZEOF_MM_ALLOCNODE);
 	heap->mm_heapend[IDX]->size      = SIZEOF_MM_ALLOCNODE;
@@ -186,6 +189,14 @@ int mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart, size_t heapsiz
 
 #if (CONFIG_KMM_REGIONS > 1) || (defined(CONFIG_MM_KERNEL_HEAP) && (CONFIG_KMM_REGIONS > 1))
 	heap->mm_nregions++;
+#endif
+
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	/* add guard nodes size to the newly added region as they are considered as allocated*/
+	heap->total_alloc_size += 2 * SIZEOF_MM_ALLOCNODE;
+	if (heap->peak_alloc_size < heap->total_alloc_size) {
+		heap->peak_alloc_size = heap->total_alloc_size;
+	}
 #endif
 
 	/* Add the single, large free node to the nodelist */
@@ -216,9 +227,7 @@ int mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart, size_t heapsiz
 int mm_initialize(FAR struct mm_heap_s *heap, FAR void *heapstart, size_t heapsize)
 {
 	int ret;
-#ifdef CONFIG_DEBUG_MM_HEAPINFO
 	int i;
-#endif
 
 	mlldbg("Heap: start=%p size=%u\n", heapstart, heapsize);
 
@@ -244,11 +253,21 @@ int mm_initialize(FAR struct mm_heap_s *heap, FAR void *heapstart, size_t heapsi
 
 	memset(heap->mm_nodelist, 0, sizeof(struct mm_freenode_s) * (MM_NNODES + 1));
 
+	/* Initialize delay list to NULL for all cpus */
+
+	for (i = 0; i < CONFIG_SMP_NCPUS; i++) {
+		heap->mm_delaylist[i] = NULL;
+	}
+
 	/* Initialize the malloc semaphore to one (to support one-at-
 	 * a-time access to private data sets).
 	 */
 
 	mm_seminitialize(heap);
+
+#ifdef CONFIG_DEBUG_MM_HEAPINFO
+	heap->total_alloc_size = heap->peak_alloc_size = 0;
+#endif
 
 	/* Add the initial region of memory to the heap */
 
@@ -260,7 +279,6 @@ int mm_initialize(FAR struct mm_heap_s *heap, FAR void *heapstart, size_t heapsi
 	for (i = 0; i < CONFIG_MAX_TASKS; i++) {
 		heap->alloc_list[i].pid = HEAPINFO_INIT_INFO;
 	}
-	heap->total_alloc_size = heap->peak_alloc_size = 0;
 #ifdef CONFIG_HEAPINFO_USER_GROUP
 	heapinfo_update_group_info(INVALID_PROCESS_ID, HEAPINFO_INVALID_GROUPID, HEAPINFO_INIT_INFO);
 #endif

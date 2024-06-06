@@ -21,96 +21,20 @@
 #include <stdint.h>
 
 #include <tinyara/config.h>
+#include <tinyara/arch.h>
 #include <semaphore.h>
 #include <tinyara/seclink_drv.h>
-#include <tinyara/security_hal.h>
 #include <tinyara/kmalloc.h>
+#include <tinyara/ss_slot_index.h>
+#include "rtl_se_crypto_function.h"
 
+#ifdef CONFIG_AMEBAD_TRUSTZONE
 #include <arch/chip/amebad_nsc.h>
-
-#define AWRAP_TAG "[AMEBA_WRAPPER]"
-#define AWRAP_ENTER                                     \
-	do {                                                \
-		sedbg(AWRAP_TAG"%s:%d\n", __FILE__, __LINE__);  \
-	} while (0)
-
-#define HAL_COPY_DATA(in, out, len)                     \
-	do {                                                \
-		if (in->data == NULL) {                         \
-			return HAL_INVALID_ARGS;                    \
-		}                                               \
-		memcpy(in->data, out, len);                     \
-		in->data_len = len;                             \
-	} while (0)
-
-#define HAL_COPY_PRIV_DATA(in, out, len)                \
-	do {                                                \
-		if (in->priv == NULL) {                         \
-			return HAL_INVALID_ARGS;                    \
-		}                                               \
-		memcpy(in->priv, out, len);                     \
-		in->priv_len = len;                             \
-	} while (0)
-
-/* Max Factory Key and usable Key Index (Only allocate 8 slot) */
-#define FACTORY_KEY_INDEX_MAX 32
-#define USABLE_FACTORY_KEY_INDEX 8
-
-/* Max RAM Key and Total Key Index */
-#define KEY_STORAGE_INDEX_MAX 32
-#define TOTAL_KEY_STORAGE_INDEX FACTORY_KEY_INDEX_MAX + KEY_STORAGE_INDEX_MAX
-#define HAL_MAX_RANDOM_SIZE 256
-
-/* Secure Storage Base Address, After Bootloader before Kernel */
-/* Fix Address, should not be changed, once change previous data will be lost */
-#define SS_BASE_ADDRESS 0xA000
-
-/* 8 Slots for Cert, 8 Slots for Key, 1 Slot is 4KB */
-#define SE_FACTORY_KEY_SIZE 0x8000
-#define SE_FACTORY_CERT_SIZE 0x8000
-#define SE_FACTORY_SIZE SE_FACTORY_KEY_SIZE + SE_FACTORY_CERT_SIZE
-
-#define CONFIG_SE_FACTORY_CERT_ADDRESS SS_BASE_ADDRESS
-#define CONFIG_SE_FACTORY_KEY_ADDRESS SS_BASE_ADDRESS + SE_FACTORY_CERT_SIZE
-
-/* Secure Storage base address locate after Factory Key and Cert */
-#define CONFIG_SE_SSTORAGE_ADDRESS SS_BASE_ADDRESS + SE_FACTORY_SIZE
-
-/* Factory Cert Key */
-#define FACTORY_CERT_ADDR CONFIG_SE_FACTORY_CERT_ADDRESS
-#define FACTORY_KEY_ADDR CONFIG_SE_FACTORY_KEY_ADDRESS
-
-/* Secure Storage Variable */
-#define SEC_STORE_OFFSET CONFIG_SE_SSTORAGE_ADDRESS
-#define SEC_STORE_MAX_SLOT 33
-
-/* Flash Sector Size */
-#define SECTOR_SIZE 4096
-
-/* Secure efuse key location */
-#define SAMSUNG_KEY_ADDR 0x150
-
-/* Non-Secure Data buff, 8K (2 Sector + Tag) */
-#define NS_BUF_LEN ((SECTOR_SIZE * 2) + 32)
-
-typedef struct {
-	void *ns_func_s;
-	uint8_t *buf;
-	uint32_t buf_len;
-} ns_passin_struc;
-
-typedef struct {
-	hal_data *input_data;
-	hal_data *output_data;
-} inout_struc;
-
-typedef struct {
-	uint32_t factory_cert_addr;
-	uint32_t factory_key_addr;
-	uint32_t sstorage_addr;
-	uint32_t samsung_key_addr;
-	hal_key_type factory_slot_key_type[USABLE_FACTORY_KEY_INDEX];
-} factory_struc;
+#endif
+#ifdef CONFIG_AMEBALITE_TRUSTZONE
+#include <arch/chip/amebalite_nsc.h>
+#endif
+#include <device_lock.h>
 
 static uint8_t *ns_buf = NULL;
 extern void *rtl_set_ns_func(void);
@@ -145,6 +69,7 @@ int se_ameba_hal_init(hal_init_param *params)
 		ret = HAL_NOT_ENOUGH_MEMORY;
 		goto exit;
 	}
+	ns_buf[0] = SS_SLOT_INDEX_SECURITY_LEVEL + 1; /* SE Slot start from 0, need to offset */
 	ns_passin.ns_func_s = rtl_set_ns_func();
 	ns_passin.buf = ns_buf;
 	ns_passin.buf_len = NS_BUF_LEN;
@@ -167,9 +92,11 @@ int se_ameba_hal_init(hal_init_param *params)
 	/* Secure Storage Key Address (efuse) */
 	input_data.samsung_key_addr = SAMSUNG_KEY_ADDR;
 
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_init(params, &input_data, &ns_passin);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 exit:
 	if (ret != HAL_SUCCESS) {
@@ -589,9 +516,11 @@ int se_ameba_hal_get_factory_key(uint32_t key_idx, hal_data *key)
 	AWRAP_ENTER;
 	int ret = HAL_SUCCESS;
 
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_get_factory_key(key_idx, key);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	if (ret != HAL_SUCCESS) {
 		sedbg("RTL SE failed (%zu)\n", ret);
@@ -604,9 +533,11 @@ int se_ameba_hal_get_factory_cert(uint32_t cert_idx, hal_data *cert)
 	AWRAP_ENTER;
 	int ret = HAL_SUCCESS;
 
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_get_factory_cert(cert_idx, cert);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	if (ret != HAL_SUCCESS) {
 		sedbg("RTL SE failed (%zu)\n", ret);
@@ -619,9 +550,11 @@ int se_ameba_hal_get_factory_data(uint32_t data_idx, hal_data *data)
 	AWRAP_ENTER;
 	int ret = HAL_SUCCESS;
 
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_get_factory_data(data_idx, data);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	if (ret != HAL_SUCCESS) {
 		sedbg("RTL SE failed (%zu)\n", ret);
@@ -748,9 +681,11 @@ int se_ameba_hal_write_storage(uint32_t ss_idx, hal_data *data)
 		}
 	}
 
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_write_storage(ss_idx, data);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	if (ret != HAL_SUCCESS) {
 		sedbg("RTL SE failed (%zu)\n", ret);
@@ -767,10 +702,16 @@ int se_ameba_hal_read_storage(uint32_t ss_idx, hal_data *data)
 		return HAL_INVALID_SLOT_RANGE;
 	}
 
+	if (data->data == NULL) {
+		return HAL_INVALID_ARGS;
+	}
+
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	ss_idx = ss_idx + 1;	/* Change Range to Slot 1-33 */
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_read_storage(ss_idx, data);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	if (ret != HAL_SUCCESS) {
 		sedbg("RTL SE failed (%zu)\n", ret);
@@ -787,10 +728,12 @@ int se_ameba_hal_delete_storage(uint32_t ss_idx)
 		return HAL_INVALID_SLOT_RANGE;
 	}
 
+	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	ss_idx = ss_idx + 1;	/* Change Range to Slot 1-33 */
 	up_allocate_secure_context(CONFIG_SE_SECURE_CONTEXT_SIZE);
 	ret = ameba_hal_delete_storage(ss_idx);
 	up_free_secure_context();
+	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	if (ret != HAL_SUCCESS) {
 		sedbg("RTL SE failed (%zu)\n", ret);
@@ -839,9 +782,9 @@ int se_initialize(void)
 {
 	int res = se_register(SECLINK_PATH, &g_ameba_lower);
 	if (res != 0) {
+		lldbg("se3\n");
 		return -1;
 	}
-
 	return 0;
 }
 #endif

@@ -67,15 +67,7 @@ endif
 #########################################
 ifeq ($(CONFIG_APP_BINARY_SEPARATION),y)
 
-BIN = micom
-# need to update
-BIN_TYPE = ELF
-DYNAMIC_RAM_SIZE = 51200
-BIN_VER = 20190421
-KERNEL_VER = 2.0
-STACKSIZE = 4096
-PRIORITY = 220
-LOADING_PRIORITY = HIGH
+BIN = $(CONFIG_APP1_BIN_NAME)
 
 include $(TOPDIR)/$(LOADABLEDIR)/loadable.mk
 

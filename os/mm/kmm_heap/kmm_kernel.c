@@ -59,6 +59,7 @@
 #include <assert.h>
 
 #include <tinyara/kmalloc.h>
+#include <tinyara/mm/mm.h>
 
 #if ((defined(CONFIG_BUILD_PROTECTED) && defined(__KERNEL__)) || \
 	 defined(CONFIG_BUILD_KERNEL)) && defined(CONFIG_MM_KERNEL_HEAP)
@@ -103,7 +104,7 @@ bool kmm_heapmember(FAR void *mem)
 {
 	int kheap_idx;
 	int region_idx;
-	struct mm_heap_s *kheap = kmm_get_heap();
+	struct mm_heap_s *kheap = kmm_get_baseheap();
 
 	/* A valid address from the kernel heap for this region would have to lie
 	 * between the region's two guard nodes.

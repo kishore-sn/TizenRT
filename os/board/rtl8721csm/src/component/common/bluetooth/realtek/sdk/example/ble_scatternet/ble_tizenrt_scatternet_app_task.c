@@ -37,9 +37,9 @@
 /*============================================================================*
  *                              Macros
  *============================================================================*/
-#define BLE_TIZENRT_SCATTERNET_APP_TASK_PRIORITY             4         /* Task priorities */
+#define BLE_TIZENRT_SCATTERNET_APP_TASK_PRIORITY             5         /* Task priorities */
 #define BLE_TIZENRT_SCATTERNET_APP_TASK_STACK_SIZE           256 * 4   /* Task stack size */
-#define BLE_TIZENRT_SCATTERNET_CALLBACK_TASK_PRIORITY        (BLE_TIZENRT_SCATTERNET_APP_TASK_PRIORITY - 1)         /* Task priorities */
+#define BLE_TIZENRT_SCATTERNET_CALLBACK_TASK_PRIORITY        BLE_TIZENRT_SCATTERNET_APP_TASK_PRIORITY         /* Task priorities */
 #define BLE_TIZENRT_SCATTERNET_CALLBACK_TASK_STACK_SIZE      256 * 8   /* Task stack size */
 #define BLE_TIZENRT_SCATTERNET_MAX_NUMBER_OF_GAP_MESSAGE     0x20      /* GAP message queue size */
 #define BLE_TIZENRT_SCATTERNET_MAX_NUMBER_OF_IO_MESSAGE      0x20      /* IO message queue size */
@@ -93,7 +93,7 @@ void ble_tizenrt_scatternet_app_main_task(void *p_param)
             }
         }
     }
-    debug_print("\r\n[%s] Init Success", __FUNCTION__);
+    debug_print("Init Success \n");
 }
 
 void ble_tizenrt_scatternet_callback_main_task(void *p_param)
@@ -105,7 +105,7 @@ void ble_tizenrt_scatternet_callback_main_task(void *p_param)
     {
         if (os_msg_recv(ble_tizenrt_scatternet_callback_queue_handle, &callback_msg, 0xFFFFFFFF) == true)
         {
-            debug_print("\r\n[%s] Recieve msg type %d", __FUNCTION__, callback_msg.type);
+            debug_print("Recieve msg type %d \n", callback_msg.type);
             ble_tizenrt_scatternet_handle_callback_msg(callback_msg);
         }
     }
@@ -137,12 +137,18 @@ void ble_tizenrt_scatternet_app_task_init(void)
         os_sem_delete(start_bt_stack_sem_handle);
         start_bt_stack_sem_handle = NULL;
     }
-    debug_print("\r\n[%s] Init Done", __FUNCTION__);
+    debug_print("Init Done \n");
 }
 
 extern T_ATTRIB_APPL *tizenrt_ble_service_tbl;
 extern uint32_t *scan_filter_tmr_handle;
 extern void *ble_tizenrt_read_sem;
+extern void *ble_tizenrt_write_sem;
+extern void *ble_tizenrt_write_no_rsp_sem;
+#if defined(CONFIG_BLE_INDICATION)
+extern void *ble_tizenrt_indicate_sem;
+#endif
+extern void *ble_tizenrt_modify_whitelist_sem;
 void ble_tizenrt_scatternet_app_task_deinit(void)
 {
     if (ble_tizenrt_scatternet_io_queue_handle) {
@@ -166,7 +172,26 @@ void ble_tizenrt_scatternet_app_task_deinit(void)
         os_timer_delete(&scan_filter_tmr_handle);
     }
     if (ble_tizenrt_read_sem) {
-        os_sem_delete(ble_tizenrt_read_sem);
+        os_mutex_delete(ble_tizenrt_read_sem);
+		ble_tizenrt_read_sem = NULL;
+    }
+    if (ble_tizenrt_write_sem) {
+        os_mutex_delete(ble_tizenrt_write_sem);
+		ble_tizenrt_write_sem = NULL;
+    }
+    if (ble_tizenrt_write_no_rsp_sem) {
+        os_mutex_delete(ble_tizenrt_write_no_rsp_sem);
+		ble_tizenrt_write_no_rsp_sem = NULL;
+    }
+#if defined(CONFIG_BLE_INDICATION)
+    if (ble_tizenrt_indicate_sem) {
+        os_mutex_delete(ble_tizenrt_indicate_sem);
+		ble_tizenrt_indicate_sem = NULL;
+    }
+#endif
+    if (ble_tizenrt_modify_whitelist_sem) {
+        os_mutex_delete(ble_tizenrt_modify_whitelist_sem);
+		ble_tizenrt_modify_whitelist_sem= NULL;
     }
 
     ble_tizenrt_scatternet_io_queue_handle = NULL;

@@ -22,6 +22,21 @@ config HAVE_CXX
 
 if HAVE_CXX
 
+choice CXX_VERSION
+	prompt "c++version"
+	default CXX_VERSION_11
+
+config CXX_VERSION_11
+	bool "c++11"
+
+config CXX_VERSION_14
+	bool "c++14"
+
+config CXX_VERSION_17
+	bool "c++17"
+
+endchoice
+
 config CXX_NEWLONG
 	bool "size_t is type long"
 	default n
@@ -36,6 +51,8 @@ comment "LLVM C++ Library (libcxx)"
 config LIBCXX
 	bool "Build LLVM libcxx"
 	default n
+	select HAVE_CXXINITIALIZE if BUILD_FLAT
+	select BINFMT_CONSTRUCTORS if APP_BINARY_SEPARATION
 	---help---
 		LLVM libc++ can be built by selecting this option.
 
@@ -44,6 +61,12 @@ if LIBCXX
 config LIBCXX_EXCEPTION
 	bool "Enable Exception Suppport"
 	default y
+	---help---
+		Enable exception support in libc++.
+
+		NOTE: C++ exception support requires toolchain version 10.3.1. If you
+		are enabling C++ exception then use docker image version 2.0.0. Use
+		menuconfig (Build Setup -> Docker Image Version) to set CONFIG_DOCKER_VERSION=2.0.0
 
 config LIBCXX_IOSTREAM_BUFSIZE
 	int "IO Stream Buffer Size"

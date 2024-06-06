@@ -1013,10 +1013,10 @@ static void tc_pthread_pthread_timed_wait(void)
 	ret_chk = pthread_create(&waiter, &attr, thread_waiter, NULL);
 	TC_ASSERT_EQ("pthread_create", ret_chk, OK);
 
-	TC_ASSERT_EQ("pthread_create", g_bpthreadcallback, true);
-
 	ret_chk = pthread_join(waiter, &result);
 	TC_ASSERT_EQ("pthread_join", ret_chk, OK);
+
+	TC_ASSERT_EQ("pthread_create", g_bpthreadcallback, true);
 
 	TC_SUCCESS_RESULT();
 }
@@ -1062,7 +1062,7 @@ static void tc_pthread_pthread_mutex_lock_unlock_trylock(void)
 	sleep(SEC_2);
 
 #ifdef CONFIG_PTHREAD_MUTEX_TYPES
-	/* initalize mutex with PTHREAD_MUTEX_RECURSIVE attribute */
+	/* initialize mutex with PTHREAD_MUTEX_RECURSIVE attribute */
 	pthread_mutex_init(&g_mutex, &attr);
 
 	ret_chk = pthread_mutex_lock(&g_mutex);

@@ -84,6 +84,12 @@
 #ifdef CONFIG_MMINFO
 #include <tinyara/mminfo.h>
 #endif
+#ifdef CONFIG_COMPRESSION
+#include <tinyara/compression.h>
+#endif
+#ifdef CONFIG_PM
+#include <tinyara/pm/pm.h>
+#endif
 #ifdef CONFIG_TASK_MANAGER
 #include <tinyara/task_manager_drv.h>
 #endif
@@ -100,10 +106,20 @@
 #ifdef CONFIG_MESSAGING_IPC
 #include "messaging/message_ctrl.h"
 #endif
+#ifdef CONFIG_LOG_DUMP
+#include <tinyara/log_dump/log_dump.h>
+#include <tinyara/log_dump/log_dump_internal.h>
+#endif
+#ifdef CONFIG_SECURITY_LEVEL
+#include <tinyara/security_level.h>
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+#define PRI_USER_MAIN (SCHED_PRIORITY_DEFAULT)
+#define PRI_PREAPP (PRI_USER_MAIN + 1)
 
 /* Configuration */
 
@@ -260,6 +276,10 @@ static inline void os_do_appstart(void)
 	se_initialize();
 #endif
 
+#ifdef CONFIG_SECURITY_LEVEL
+	set_security_level();
+#endif
+
 #ifdef CONFIG_IOTDEV
 	iotbus_sig_register();
 #endif
@@ -286,8 +306,25 @@ static inline void os_do_appstart(void)
 	mminfo_register();
 #endif
 
+#ifdef CONFIG_COMPRESSION
+	compress_register();
+#endif
+
+#ifdef CONFIG_PM
+	pm_driver_register();
+#endif
+
 #ifdef CONFIG_PRODCONFIG
 	prodconfig_register();
+#endif
+
+#ifdef CONFIG_LOG_DUMP
+	svdbg("Starting log_dump thread\n");
+
+	pid = kernel_thread(LOG_DUMP_NAME, CONFIG_LOG_DUMP_PRIO, LOG_DUMP_STACKSIZE, log_dump, NULL);
+	if (pid < 0) {
+		sdbg("Failed to start log dump");
+	}
 #endif
 
 #ifdef CONFIG_TASK_MONITOR
@@ -300,7 +337,7 @@ static inline void os_do_appstart(void)
 #if defined(CONFIG_SYSTEM_PREAPP_INIT) && !defined(CONFIG_APP_BINARY_SEPARATION)
 	svdbg("Starting application init task\n");
 
-	pid = task_create("appinit", SCHED_PRIORITY_DEFAULT, CONFIG_SYSTEM_PREAPP_STACKSIZE, preapp_start, (FAR char *const *)NULL);
+	pid = task_create("appinit", PRI_PREAPP, CONFIG_SYSTEM_PREAPP_STACKSIZE, preapp_start, (FAR char *const *)NULL);
 	if (pid < 0) {
 		svdbg("Failed to create application init thread\n");
 	}
@@ -315,7 +352,7 @@ static inline void os_do_appstart(void)
 	}
 #endif
 
-#if !defined(CONFIG_BINARY_MANAGER)
+#if !defined(CONFIG_APP_BINARY_SEPARATION)
 	/* Start the application initialization task.  In a flat build, this is
 	 * entrypoint is given by the definitions, CONFIG_USER_ENTRYPOINT.  In
 	 * the protected build, however, we must get the address of the
@@ -325,9 +362,9 @@ static inline void os_do_appstart(void)
 	svdbg("Starting application main task\n");
 
 #if defined(CONFIG_USER_ENTRYPOINT)
-	pid = task_create("appmain", SCHED_PRIORITY_DEFAULT, CONFIG_USERMAIN_STACKSIZE, (main_t)CONFIG_USER_ENTRYPOINT, (FAR char *const *)NULL);
+	pid = task_create("appmain", PRI_USER_MAIN, CONFIG_USERMAIN_STACKSIZE, (main_t)CONFIG_USER_ENTRYPOINT, (FAR char *const *)NULL);
 #endif
-#endif // !CONFIG_BINARY_MANAGER
+#endif // !CONFIG_APP_BINARY_SEPARATION
 
 	ASSERT(pid > 0);
 }

@@ -66,6 +66,14 @@ config ARCH_NEED_ADDRENV_MAPPING
 	bool
 	default n
 
+config ARCH_HAVE_MULTICPU
+        bool
+        default n
+
+config ARCH_HAVE_TESTSET
+	bool
+	default n
+
 config ARCH_HAVE_VFORK
 	bool
 	default n
@@ -94,6 +102,10 @@ config ARCH_HAVE_RESET
 	bool
 	default n
 
+config ARCH_HAVE_DVFS
+	bool
+	default n
+
 config ARCH_USE_MMU
 	bool "Enable MMU"
 	default n
@@ -103,6 +115,10 @@ config ARCH_USE_MMU
 		enable use of the MMU. For most architectures, this is not
 		really an option: It is required to use the MMU. In those
 		cases, this selection will always be forced.
+
+config ARCH_HAVE_FETCHADD
+        bool
+        default n
 
 config ARCH_USE_MPU
 	bool "Enable MPU"
@@ -446,6 +462,19 @@ config ARCH_IRQPRIO
 		interrupts with certain configuration options.  So this selection
 		should be used with caution.
 
+config ARCH_MMUDUMP
+	bool "Dump MMU settings on assertions"
+	default n
+	depends on ARCH_USE_MMU
+	---help---
+		Enable to dump the MMU page tables when a crash happens.
+
+config ARCH_TASKDUMP
+	bool "Dump Task info on assertions"
+	default n
+	---help---
+		Enable to dump info about all tasks when a crash happens.
+
 config ARCH_STACKDUMP
 	bool "Dump stack on assertions"
 	default n
@@ -455,6 +484,10 @@ config ARCH_STACKDUMP
 		To see symbols on call stack dump, please enable DEBUG_DISPLAY_SYMBOL.
 		It is possible to enable it when FS_ROMFS is enabled.
 		
+config ARCH_STACKDUMP_MAX_LENGTH
+        int "The maximum length for dump stack on assertions"
+        depends on ARCH_STACKDUMP
+        default 0
 
 config DEBUG_DISPLAY_SYMBOL
 	bool "Display symbols on call stack dump"
@@ -584,6 +617,15 @@ config ARCH_INTERRUPTSTACK
 		will be the size of the interrupt stack in bytes.  If not defined (or
 		defined to be zero), the user task stacks will be used during interrupt
 		handling.
+
+config ARCH_NESTED_IRQ_STACK_SIZE
+	int "Nested IRQ secondary stack size"
+	depends on ARCH_HAVE_INTERRUPTSTACK && ARCH_ARMV8M_FAMILY
+	default 512
+	---help---
+		This is an additional stack which will be used only when nested irq
+		happens with a stale or invalid value of MSP. That is, when the nested
+		IRQ occurs in handler mode, but the MSP value has not yet been updated.
 
 config ARCH_HAVE_NESTED_INTERRUPT
 	bool
@@ -755,6 +797,16 @@ config BOOT_COPYTORAM
 endchoice
 
 menu "Boot Memory Configuration"
+
+config RAM_START
+        hex "Primary RAM start address (physical)"
+        default 0x0
+        ---help---
+                The physical start address of primary installed RAM.  "Primary" RAM
+                refers to the RAM that you link program code into.  If program code
+                does not execute out of RAM but from FLASH, then you may designate
+                any block of RAM as "primary."
+
 config RAM_VSTART
 	hex "Primary RAM start address (virtual)"
 	default 0x0
@@ -764,6 +816,15 @@ config RAM_VSTART
 		refers to the RAM that you link program code into.  If program code
 		does not execute out of RAM but from FLASH, then you may designate
 		any block of RAM as "primary."
+
+config RAM_SIZE
+        int "Primary RAM size"
+        default 0
+        ---help---
+                The size in bytes of the installed primary RAM. "Primary" RAM
+                refers to the RAM that you link program code into.  If program code
+                does not execute out of RAM but from FLASH, then you may designate
+                any block of RAM as "primary."
 
 config RAM_KREGIONx_START
 	string "An address or list of start address for kernel RAM region"
@@ -847,32 +908,6 @@ config RAM_DDR_SIZE
 	---help---
 		If the board uses external DDR RAM memory, you need to define
 		the size of DDR RAM
-
-
-if BOOT_RUNFROMFLASH && ARCH_USE_MMU
-
-config FLASH_START
-	hex "Boot FLASH start address (physical)"
-	default 0x0
-	---help---
-		The physical start address of installed boot FLASH.  "Boot" FLASH
-		refers to the FLASH that you link program code into.
-
-config FLASH_VSTART
-	hex "Boot FLASH start address (virtual)"
-	default 0x0
-	---help---
-		The virtual start address of installed boot FLASH.  "Boot" FLASH
-		refers to the FLASH that you link program code into.
-
-config FLASH_SIZE
-	int "Boot FLASH size"
-	default 0
-	---help---
-		The size in bytes of the installed boot FLASH.  "Boot" FLASH
-		refers to the FLASH that you link program code into.
-
-endif # BOOT_RUNFROMFLASH && ARCH_USE_MMU
 
 config ARCH_HAVE_SDRAM
 	bool

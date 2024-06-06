@@ -72,7 +72,7 @@ void rltk_wlan_set_netif_info(int idx_wlan, void *dev, unsigned char *dev_addr)
 	dev_tmp = rtk_get_netdev(idx_wlan);
 
 	if (!dev_tmp) {
-		DiagPrintf("[rltk_wlan_set_netif_info] get dev fail\n");
+		rtw_printf("[rltk_wlan_set_netif_info] get dev fail\n");
 		return;
 	}
 	netdev_set_hwaddr(dev_tmp, dev_addr, IFHWADDRLEN);
@@ -105,15 +105,15 @@ int rltk_wlan_send(int idx, struct eth_drv_sg *sg_list, int sg_len, int total_le
 	}
 	DBG_TRACE("%s is called", __FUNCTION__);
 
-	save_and_cli();
+	unsigned int irq_flags = save_and_cli();
 	if (rltk_wlan_check_isup(idx)) {
 		rltk_wlan_tx_inc(idx);
 	} else {
 		DBG_ERR("netif is DOWN");
-		restore_flags();
+		restore_flags(irq_flags);
 		return -1;
 	}
-	restore_flags();
+	restore_flags(irq_flags);
 
 #ifdef CONFIG_TX_ZERO_COPY
 	data = rtw_malloc(1640);
@@ -160,9 +160,9 @@ int rltk_wlan_send(int idx, struct eth_drv_sg *sg_list, int sg_len, int total_le
 	rltk_wlan_send_skb(idx, skb);
 
 exit:
-	save_and_cli();
+	irq_flags = save_and_cli();
 	rltk_wlan_tx_dec(idx);
-	restore_flags();
+	restore_flags(irq_flags);
 	return ret;
 #endif
 }
@@ -235,7 +235,7 @@ int netif_get_hwaddr(int idx_wlan, uint8_t *dev_addr)
 	dev_tmp = rtk_get_netdev(idx_wlan);
 
 	if (!dev_tmp) {
-		DiagPrintf("[netif_get_hwaddr] get dev fail\n");
+		rtw_printf("[netif_get_hwaddr] get dev fail\n");
 		return -1;
 	}
 	if (netdev_get_hwaddr(dev_tmp, dev_addr, (unsigned char*)IFHWADDRLEN) == 0)
@@ -287,7 +287,7 @@ unsigned char *rltk_wlan_get_ip(int idx)
 	dev_tmp = rtk_get_netdev(idx);
 	
 	if (!dev_tmp) {
-		DiagPrintf("[rltk_wlan_get_ip] get dev fail\n");
+		rtw_printf("[rltk_wlan_get_ip] get dev fail\n");
 		return NULL;
 	}
 
@@ -302,7 +302,7 @@ unsigned char *rltk_wlan_get_gw(int idx)
 	dev_tmp = rtk_get_netdev(idx);
 	
 	if (!dev_tmp) {
-		DiagPrintf("[rltk_wlan_get_ip] get dev fail\n");
+		rtw_printf("[rltk_wlan_get_ip] get dev fail\n");
 		return NULL;
 	}
 
@@ -317,7 +317,7 @@ unsigned char *rltk_wlan_get_gwmask(int idx)
 	dev_tmp = rtk_get_netdev(idx);
 	
 	if (!dev_tmp) {
-		DiagPrintf("[rltk_wlan_get_ip] get dev fail\n");
+		rtw_printf("[rltk_wlan_get_ip] get dev fail\n");
 		return NULL;
 	}
 

@@ -27,12 +27,29 @@
 #ifndef __FRAMEWORK_INCLUDE_PREFERENCE_PREFERENCE_H__
 #define __FRAMEWORK_INCLUDE_PREFERENCE_PREFERENCE_H__
 
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
 #include <stdbool.h>
 #include <tinyara/preference.h>
 
-#ifdef __cplusplus
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+#ifdef __cpluplus
 extern "C" {
 #endif
+
+/****************************************************************************
+ * Public Type Definitions
+ ****************************************************************************/
+enum preference_type_e {
+        PREFERENCE_TYPE_INT = 0,
+        PREFERENCE_TYPE_DOUBLE,
+        PREFERENCE_TYPE_BOOL,
+        PREFERENCE_TYPE_STRING,
+        PREFERENCE_TYPE_BINARY,
+};
 
 /****************************************************************************
  * Public Function Prototypes
@@ -78,6 +95,17 @@ int preference_set_bool(const char *key, bool value);
 int preference_set_string(const char *key, char *value);
 
 /**
+ * @brief Set binary value with key in the preference
+ * @details @b #include <preference/preference.h>
+ * @param[in] key a name of the preference value to set
+ * @param[in] value a binary value for the given key
+ * @param[in] len length of the binary value in bytes
+ * @return On success, OK is returned. On failure, a negative value defined in preference_result_error_e is returned.
+ * @since TizenRT v3.1 PRE
+ */
+int preference_set_binary(const char *key, void *value, int len);
+
+/**
  * @brief Get int value with key in the preference
  * @details @b #include <preference/preference.h>
  * @param[in] key a name of the key to retrieve
@@ -116,6 +144,17 @@ int preference_get_bool(const char *key, bool *value);
  * @since TizenRT v3.1 PRE
  */
 int preference_get_string(const char *key, char **value);
+
+/**
+ * @brief Get binary value with key in the preference
+ * @details @b #include <preference/preference.h>
+ * @param[in] key a name of the key to retrieve
+ * @param[out] value a binary value for the given key
+ * @param[out] len length of the binary value in bytes
+ * @return On success, OK is returned. On failure, a negative value defined in preference_result_error_e is returned.
+ * @since TizenRT v3.1 PRE
+ */
+int preference_get_binary(const char *key, void **value, int *len);
 
 /**
  * @brief Remove the value with the given key from the preference
@@ -205,6 +244,17 @@ int preference_shared_set_bool(const char *key, bool value);
 int preference_shared_set_string(const char *key, char *value);
 
 /**
+ * @brief Set binary value with key path in the shared preference
+ * @details @b #include <preference/preference.h>
+ * @param[in] key a full path of key to store
+ * @param[in] value a binary value for the given key
+ * @param[in] len length of the binary value in bytes
+ * @return On success, OK is returned. On failure, a negative value defined in preference_result_error_e is returned.
+ * @since TizenRT v3.1 PRE
+ */
+int preference_shared_set_binary(const char *key, void *value, int len);
+
+/**
  * @brief Get int value with key path in the shared preference
  * @details @b #include <preference/preference.h>
  * @param[in] key a full path of key to retrieve
@@ -243,6 +293,17 @@ int preference_shared_get_bool(const char *key, bool *value);
  * @since TizenRT v3.1 PRE
  */
 int preference_shared_get_string(const char *key, char **value);
+
+/**
+ * @brief Get binary value with key path in the shared preference
+ * @details @b #include <preference/preference.h>
+ * @param[in] key a full path of key to retrieve
+ * @param[out] value a binary value for the given key
+ * @param[out] len length of the binary value in bytes
+ * @return On success, OK is returned. On failure, a negative value defined in preference_result_error_e is returned.
+ * @since TizenRT v3.1 PRE
+ */
+int preference_shared_get_binary(const char *key, void **value, int *len);
 
 /**
  * @brief Remove the value with the given key path from the shared preference

@@ -32,6 +32,7 @@
 
 #include <assert.h>
 #include <debug.h>
+#include <tinyara/security_level.h>
 
 #include <arch/irq.h>
 
@@ -44,6 +45,7 @@
 #include "nvic.h"
 #include "up_internal.h"
 
+extern uint32_t system_exception_location;
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -68,6 +70,33 @@
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: print_usagefault_detail
+ ****************************************************************************/
+
+static inline void print_usagefault_detail(uint32_t *regs, uint32_t cfsr)
+{
+	lldbg("#########################################################################\n");
+	lldbg("PANIC!!! Usagefault at instruction: 0x%08x\n", regs[REG_R15]);
+
+	if (cfsr & DIVBYZERO) {
+		lldbg("FAULT TYPE: DIVBYZERO (Divide by zero error has occurred).\n");
+	} else if (cfsr & UNALIGNED) {
+		lldbg("FAULT TYPE: UNALIGNED (Unaligned access error has occurred).\n");
+	} else if (cfsr & NOCP) {
+		lldbg("FAULT TYPE: NOCP (A coprocessor error has occurred).\n");
+	} else if (cfsr & INVPC) {
+		lldbg("FAULT TYPE: INVPC (Integrity check error during EXC_RETURN).\n");
+	} else if (cfsr & INVSTATE) {
+		lldbg("FAULT TYPE: INVSTATE (Invalid state. Check EPSR T bit. XPSR = 0x%08x).\n", regs[REG_XPSR]);
+	} else if (cfsr & UNDEFINSTR) {
+		lldbg("FAULT TYPE: UNDEFINSTR (Undefined instruction executed).\n");
+	}
+
+	lldbg("FAULT REGS: CFAULTS: 0x%08x\n", cfsr);
+	lldbg("#########################################################################\n");
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -84,21 +113,15 @@ int up_usagefault(int irq, FAR void *context, FAR void *arg)
 	(void)irqsave();
 	uint32_t *regs = (uint32_t *)context;
 	uint32_t cfsr = getreg32(NVIC_CFAULTS);
-	lldbg("PANIC!!! Usagefault occurred while executing instruction at address : 0x%08x\n", regs[REG_R15]);
-	lldbg("CFAULTS: 0x%08x\n", cfsr);
+	system_exception_location = regs[REG_R15];
+	if (cfsr & INVPC) {
+		/* As PC value might be invalid use LR value to determine if
+		 * the crash occurred in the kernel space or in the user space */
+		system_exception_location = regs[REG_R14];
+	}
 
-	if (cfsr & DIVBYZERO) {
-		lldbg("Divide by zero error has occurred.\n");
-	} else if (cfsr & UNALIGNED) {
-		lldbg("Unaligned access error has occurred.\n");
-	} else if (cfsr & NOCP) {
-		lldbg("A coprocessor error has occurred.\n");
-	} else if (cfsr & INVPC) {
-		lldbg("An integrity check error has occurred on EXC_RETURN. PC value might be invalid.\n");
-	} else if (cfsr & INVSTATE) {
-		lldbg("Invalid state. Instruction executed with invalid EPSR.T or EPSR.IT field.\n");
-	} else if (cfsr & UNDEFINSTR) {
-		lldbg("Undefined instruction executed.\n");
+	if (!IS_SECURE_STATE()) {
+		print_usagefault_detail(regs, cfsr);
 	}
 
 #ifdef CONFIG_SYSTEM_REBOOT_REASON

@@ -53,9 +53,9 @@ static pthread_cond_t g_wifi_manager_test_cond;
 		pthread_mutex_unlock(&g_wifi_manager_test_mutex);\
 	} while (0)
 
-static void wifi_sta_connected_cb(wifi_manager_result_e res); // in station mode, connected to ap
-static void wifi_sta_disconnected_cb(wifi_manager_disconnect_e disconn); // in station mode, disconnected from ap
-static void wifi_scan_ap_done_cb(wifi_manager_scan_info_s **scan_info, wifi_manager_scan_result_e res); // called when scanning ap is done
+static void wifi_sta_connected_cb(wifi_manager_cb_msg_s msg, void *arg);
+static void wifi_sta_disconnected_cb(wifi_manager_cb_msg_s msg, void *arg);
+static void wifi_scan_ap_done_cb(wifi_manager_cb_msg_s msg, void *arg);
 
 static wifi_manager_cb_s wifi_callbacks = {
 	wifi_sta_connected_cb,
@@ -65,30 +65,31 @@ static wifi_manager_cb_s wifi_callbacks = {
 	wifi_scan_ap_done_cb, // this callback function is called when scanning ap is done.
 };
 
-static void wifi_sta_connected_cb(wifi_manager_result_e res)
+static void wifi_sta_connected_cb(wifi_manager_cb_msg_s msg, void *arg)
 {
 	printf("wifi_sta_connected: send signal!!! \n");
 	WIFITEST_SIGNAL;
 }
 
-static void wifi_sta_disconnected_cb(wifi_manager_disconnect_e disconn)
+static void wifi_sta_disconnected_cb(wifi_manager_cb_msg_s msg, void *arg)
 {
 	printf("wifi_sta_disconnected: send signal!!! \n");
 	WIFITEST_SIGNAL;
 }
 
-static void wifi_scan_ap_done_cb(wifi_manager_scan_info_s **scan_info, wifi_manager_scan_result_e res)
+static void wifi_scan_ap_done_cb(wifi_manager_cb_msg_s msg, void *arg)
 {
 	/******************************************************************
 	 * Make sure you copy the scan results onto a local data structure.
 	 * It will be deleted soon eventually as you exit this function.
 	 ******************************************************************/
-	if (res == WIFI_SCAN_FAIL) {
+	if (msg.res != WIFI_MANAGER_SUCCESS || !msg.scanlist) {
 		printf("WiFi scan failed\n");
 		WIFITEST_SIGNAL;
 		return;
 	}
-	wifi_manager_scan_info_s *wifi_scan_iter = *scan_info;
+
+	wifi_manager_scan_info_s *wifi_scan_iter = msg.scanlist;
 	while (wifi_scan_iter != NULL) {
 		printf("SSID: %-20s, BSSID: %-20s, RSSI: %d, CH: %d, Phy_type: %d\n", \
 				wifi_scan_iter->ssid, wifi_scan_iter->bssid, wifi_scan_iter->rssi, \
@@ -214,7 +215,6 @@ static void itc_wifimanager_get_mode_p(void)
 	wifi_manager_result_e ret = WIFI_MANAGER_FAIL;
 	wifi_manager_info_s info;
 	int ret_cmp = 0;
-	int i;
 
 	ret = wifi_manager_init(&wifi_callbacks);
 	TC_ASSERT_EQ("wifi_manager_init", ret, WIFI_MANAGER_SUCCESS);
@@ -237,13 +237,6 @@ static void itc_wifimanager_get_mode_p(void)
 	ret = wifi_manager_get_info(&info);
 	TC_ASSERT_EQ_CLEANUP("wifi_manager_get_info", ret, WIFI_MANAGER_SUCCESS, wifi_manager_deinit());
 	TC_ASSERT_EQ_CLEANUP("wifi_manager_get_info", info.mode, SOFTAP_MODE, wifi_manager_deinit());
-
-	printf("\nMAC Address: ");
-
-	for (i = 0; i < 5; i++) {
-		printf("%x:", info.mac_address[i]);
-	}
-	printf("%x\n", info.mac_address[5]);
 
 	ret_cmp = strncmp(info.ssid, ap_config.ssid, strlen(TEST_SOFTAP_SSID));
 	TC_ASSERT_EQ_CLEANUP("string cmp between SSID ", ret_cmp, 0, wifi_manager_deinit());
@@ -306,7 +299,7 @@ static void itc_wifimanager_connect_ap_config_p(void)
 	TC_ASSERT_EQ("wifi_manager_init", ret, WIFI_MANAGER_SUCCESS);
 
 	wifi_manager_ap_config_s config;
-	reconfig.interval = 10;
+	//config.interval = 10;
 	config.ssid_length = strlen(TEST_SSID);
 	config.passphrase_length = strlen(TEST_PASSWORD);
 	strncpy(config.ssid, TEST_SSID, config.ssid_length + 1);

@@ -53,7 +53,7 @@
 	do {													\
 		int sl_res = sem_post(lock);						\
 		if (sl_res < 0) {									\
-			SLDRV_LOG(SLDRV_TAG" lock fail(%d)\n", errno);	\
+			SLDRV_LOG(SLDRV_TAG" unlock fail(%d)\n", errno);	\
 		}													\
 	} while (0)
 
@@ -123,9 +123,7 @@ ssize_t seclink_write(FAR struct file *filep, FAR const char *buffer, size_t len
 
 int seclink_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 {
-	SLDRV_ENTER;
-
-	SLDRV_LOG("-->%s (0x%x)(0x%x)\n", __FUNCTION__, cmd, arg);
+	//SLDRV_LOG("-->%s (0x%x)(0x%x)\n", __FUNCTION__, cmd, arg);
 
 	FAR struct inode *inode = filep->f_inode;
 	FAR struct sec_upperhalf_s *upper = inode->i_private;

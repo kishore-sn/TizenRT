@@ -62,6 +62,7 @@
 #include <sched.h>
 #include <tinyara/arch.h>
 #include <tinyara/sched.h>
+#include <tinyara/mm/mm.h>
 
 #include "sched/sched.h"
 #include "semaphore/semaphore.h"
@@ -199,6 +200,8 @@ int sem_post(FAR sem_t *sem)
 {
 	irqstate_t saved_state;
 	int ret = ERROR;
+	size_t caller_retaddr = 0;
+	ARCH_GET_RET_ADDRESS(caller_retaddr);
 
 	/* Make sure we were supplied with a valid semaphore. */
 
@@ -208,10 +211,10 @@ int sem_post(FAR sem_t *sem)
 		 * handler.
 		 */
 
-		saved_state = irqsave();
+		saved_state = enter_critical_section();
 
 		/* Perform the semaphore unlock operation. */
-		ASSERT(sem->semcount < SEM_VALUE_MAX);
+		ASSERT_INFO(sem->semcount < SEM_VALUE_MAX, "sem = 0x%x, caller address = 0x%x", sem, caller_retaddr);
 		sem_releaseholder(sem, this_task());
 		sem->semcount++;
 
@@ -220,7 +223,7 @@ int sem_post(FAR sem_t *sem)
 
 		/* Interrupts may now be enabled. */
 
-		irqrestore(saved_state);
+		leave_critical_section(saved_state);
 	} else {
 		set_errno(EINVAL);
 	}

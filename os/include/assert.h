@@ -63,13 +63,24 @@
 #ifndef __INCLUDE_ASSERT_H
 #define __INCLUDE_ASSERT_H
 
+#ifdef NXFUSE_HOST_BUILD
+#define FAR
+#define DEBUGASSERT(x)
+#define ASSERT(x) DEBUGASSERT(x)
+#define OK    0
+#define ERROR 1
+
+int get_errno(void);
+#else
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <tinyara/compiler.h>
+#include <tinyara/config.h>
 #include <stdint.h>
 
+extern char assert_info_str[CONFIG_STDIO_BUFFER_SIZE];
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -83,6 +94,13 @@
 #undef PANIC					/* Unconditional abort */
 
 #ifdef CONFIG_HAVE_FILENAME
+#define ASSERT_INFO(f, fmt, ...) \
+	{ \
+		if (!(f)) { \
+			  snprintf(assert_info_str, CONFIG_STDIO_BUFFER_SIZE, fmt, ##__VA_ARGS__); \
+			  up_assert((const uint8_t *)__FILE__, (int)__LINE__); \
+		} \
+	}
 
 #define ASSERT(f) \
 	{ if (!(f)) up_assert((const uint8_t *)__FILE__, (int)__LINE__); }
@@ -95,6 +113,14 @@
 
 #ifdef CONFIG_DEBUG
 
+#define DEBUGASSERT_INFO(f, fmt, ...) \
+	{ \
+		if (!(f)) { \
+			  snprintf(assert_info_str, CONFIG_STDIO_BUFFER_SIZE, fmt, ##__VA_ARGS__); \
+			  up_assert((const uint8_t *)__FILE__, (int)__LINE__); \
+		} \
+	}
+
 #define DEBUGASSERT(f) \
 	{ if (!(f)) up_assert((const uint8_t *)__FILE__, (int)__LINE__); }
 
@@ -106,6 +132,7 @@
 
 #else
 
+#define DEBUGASSERT_INFO(f, fmt, ...)
 #define DEBUGASSERT(f)
 #define DEBUGVERIFY(f) ((void)(f))
 #define DEBUGPANIC()
@@ -114,6 +141,13 @@
 
 #else
 
+#define ASSERT_INFO(f, fmt, ...) \
+	{ \
+		if (!(f)) { \
+			  snprintf(assert_info_str, CONFIG_STDIO_BUFFER_SIZE, fmt, ##__VA_ARGS__); \
+			  up_assert(); \
+		} \
+	}
 /**
  * @brief Assert if the condition is not true
  *
@@ -143,6 +177,13 @@
 
 #ifdef CONFIG_DEBUG
 
+#define DEBUGASSERT_INFO(f, fmt, ...) \
+	{ \
+		if (!(f)) { \
+			  snprintf(assert_info_str, CONFIG_STDIO_BUFFER_SIZE, fmt, ##__VA_ARGS__): \
+			  up_assert(); \
+		} \
+	}
 /**
  * @brief Like ASSERT, but only if CONFIG_DEBUG is defined
  *
@@ -172,6 +213,7 @@
 
 #else
 
+#define DEBUGASSERT_INFO(f, fmt, ...)
 #define DEBUGASSERT(f)
 #define DEBUGVERIFY(f) ((void)(f))
 #define DEBUGPANIC()
@@ -232,6 +274,8 @@ void dump_all_stack(void);
 #ifdef __cplusplus
 }
 #endif
+
+#endif							/* NXFUSE_HOST_BUILD */
 
 #endif							/* __INCLUDE_ASSERT_H */
 

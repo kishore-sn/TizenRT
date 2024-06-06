@@ -46,9 +46,13 @@ typedef struct
 }T_HCI_UART;
 
 T_HCI_UART *hci_uart_obj;
+extern uint8_t flag_for_hci_trx;
 
 #define TX_TRASMIT_COUNT 16
-#define hci_board_debug DBG_8195A
+#define hci_board_debug printf
+#define hci_board_debug(...)     do {\
+        printf("[RTK_BT] " __VA_ARGS__);\
+}while(0)
 
 #define HCI_UART_IDX  1      /* (only 0, 1, 3) */
 
@@ -80,7 +84,7 @@ T_HCI_UART *hci_uart_obj;
       #define HCI_UART_IRQ  UART1_IRQ
 #endif
 
-#define HCIUART_IRQ_PRIO    10
+#define HCIUART_IRQ_PRIO    6
 
 
 /* ========================================HCI UART BRIDGE================= */
@@ -247,10 +251,11 @@ static inline void receive_chars(T_HCI_UART *hci_adapter, int ind)
 
     /* HCI_PRINT_INFO1("receive_chars: rx_len %u", hci_adapter->rx_len); */
     /* FIXME: There is too many rx indication events ? */
-    if (ind && hci_adapter->rx_ind)
-    {
-        hci_adapter->rx_ind();
-
+    if (flag_for_hci_trx == 0) {
+        if (ind && hci_adapter->rx_ind)
+        {
+            hci_adapter->rx_ind();
+        }
     }
 }
 

@@ -28,7 +28,6 @@
 #include <gap_msg.h>
 #include "ble_tizenrt_app.h"
 
-
 /** @defgroup  PERIPH_APP_TASK Peripheral App Task
     * @brief This file handles the implementation of application task related functions.
     *
@@ -38,9 +37,9 @@
 /*============================================================================*
  *                              Macros
  *============================================================================*/
-#define BLE_TIZENRT_APP_TASK_PRIORITY             4         /* Task priorities */
+#define BLE_TIZENRT_APP_TASK_PRIORITY             5         /* Task priorities */
 #define BLE_TIZENRT_APP_TASK_STACK_SIZE           256 * 4   /* Task stack size */
-#define BLE_TIZENRT_CALLBACK_TASK_PRIORITY        (BLE_TIZENRT_APP_TASK_PRIORITY - 1)         /* Task priorities */
+#define BLE_TIZENRT_CALLBACK_TASK_PRIORITY        BLE_TIZENRT_APP_TASK_PRIORITY         /* Task priorities */
 #define BLE_TIZENRT_CALLBACK_TASK_STACK_SIZE      256 * 8   /* Task stack size */
 #define BLE_TIZENRT_MAX_NUMBER_OF_GAP_MESSAGE     0x20      /* GAP message queue size */
 #define BLE_TIZENRT_MAX_NUMBER_OF_IO_MESSAGE      0x20      /* IO message queue size */
@@ -94,7 +93,7 @@ void ble_tizenrt_app_main_task(void *p_param)
             }
         }
     }
-    debug_print("\r\n[%s] Init Success", __FUNCTION__);
+    debug_print("Init Success \n");
 }
 
 void ble_tizenrt_callback_main_task(void *p_param)
@@ -106,7 +105,7 @@ void ble_tizenrt_callback_main_task(void *p_param)
     {
         if (os_msg_recv(ble_tizenrt_callback_queue_handle, &callback_msg, 0xFFFFFFFF) == true)
         {
-            debug_print("\r\n[%s] Recieve msg type %d", __FUNCTION__, callback_msg.type);
+            debug_print("Recieve msg type %d \n", callback_msg.type);
             ble_tizenrt_handle_callback_msg(callback_msg);
         }
     }
@@ -131,15 +130,18 @@ void ble_tizenrt_app_task_init(void)
 
     if (os_sem_take(start_bt_stack_sem_handle, 0xFFFFFFFF) == true) {
         if(false == gap_start_bt_stack(ble_tizenrt_evt_queue_handle, ble_tizenrt_io_queue_handle, BLE_TIZENRT_MAX_NUMBER_OF_GAP_MESSAGE))
-            debug_print("\r\n[%s] gap_start_bt_stack return false", __FUNCTION__);
+            debug_print("gap_start_bt_stack return false \n");
         os_sem_delete(start_bt_stack_sem_handle);
         start_bt_stack_sem_handle = NULL;
     } else
-        debug_print("\r\n[%s] take start_bt_stack_sem_handle fail", __FUNCTION__);
-    debug_print("\r\n[%s] Init Done", __FUNCTION__);
+        debug_print("take start_bt_stack_sem_handle fail \n");
+    debug_print("Init Done \n");
 }
 
 extern T_ATTRIB_APPL *tizenrt_ble_service_tbl;
+#if defined(CONFIG_BLE_INDICATION)
+extern void *ble_tizenrt_indicate_sem;
+#endif
 void ble_tizenrt_app_task_deinit(void)
 {
     if (ble_tizenrt_io_queue_handle) {
@@ -158,6 +160,13 @@ void ble_tizenrt_app_task_deinit(void)
     if (ble_tizenrt_callback_task_handle) {
         os_task_delete(ble_tizenrt_callback_task_handle);
     }
+
+#if defined(CONFIG_BLE_INDICATION)
+    if (ble_tizenrt_indicate_sem) {
+        os_mutex_delete(ble_tizenrt_indicate_sem);
+        ble_tizenrt_indicate_sem = NULL;
+    }
+#endif
 
     ble_tizenrt_io_queue_handle = NULL;
     ble_tizenrt_evt_queue_handle = NULL;

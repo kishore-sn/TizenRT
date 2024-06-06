@@ -131,7 +131,11 @@ static void up_calibratedelay(void)
 #if defined(CONFIG_STACK_COLORATION) && CONFIG_ARCH_INTERRUPTSTACK > 3
 static inline void up_color_intstack(void)
 {
+#ifdef CONFIG_SMP
+  uint32_t *ptr = (uint32_t *)arm_intstack_alloc();
+#else
 	uint32_t *ptr = (uint32_t *)&g_intstackalloc;
+#endif
 	ssize_t size;
 
 	for (size = (CONFIG_ARCH_INTERRUPTSTACK & ~3); size > 0; size -= sizeof(uint32_t)) {
@@ -140,6 +144,20 @@ static inline void up_color_intstack(void)
 }
 #else
 #define up_color_intstack()
+#endif
+
+#ifdef CONFIG_ARCH_NESTED_IRQ_STACK_SIZE
+static inline void up_color_nestirqstack(void)
+{
+	uint32_t *ptr = (uint32_t *)&g_nestedirqstkalloc;
+	ssize_t size;
+
+	for (size = (CONFIG_ARCH_NESTED_IRQ_STACK_SIZE & ~3); size > 0; size -= sizeof(uint32_t)) {
+		*ptr++ = INTSTACK_COLOR;
+	}
+}
+#else
+#define up_color_nestirqstack()
 #endif
 
 /****************************************************************************
@@ -181,6 +199,7 @@ void up_initialize(void)
 	/* Colorize the interrupt stack */
 
 	up_color_intstack();
+	up_color_nestirqstack();
 
 	/* Initialize the interrupt subsystem */
 
@@ -251,6 +270,10 @@ void up_initialize(void)
 
 #if defined(CONFIG_DEV_ZERO)
 	devzero_register();			/* Standard /dev/zero */
+#endif
+	
+#if defined(CONFIG_VIRTKEY)
+	virtkey_register();			/* Virtual key driver */
 #endif
 
 #endif							/* CONFIG_NFILE_DESCRIPTORS */

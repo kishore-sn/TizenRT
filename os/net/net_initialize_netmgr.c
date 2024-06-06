@@ -35,6 +35,9 @@ extern int netdev_mgr_start(void);
 #ifdef CONFIG_VIRTUAL_WLAN
 extern void vwifi_start(void);
 #endif
+#ifdef CONFIG_VIRTUAL_BLE
+extern void vble_start(void);
+#endif
 extern int trwifi_run_handler(void);
 /****************************************************************************
  * Name: netmgr_setup
@@ -66,20 +69,20 @@ void net_setup(void)
 	if (!g_netmgr.dev) {
 		g_netmgr.dev = (void *)kmm_zalloc(sizeof(struct lwnl_lowerhalf_s));
 		if (!g_netmgr.dev) {
-			NET_LOGE(TAG, "!!!alloc dev fail!!!\n");
+			NET_LOGKE(TAG, "!!!alloc dev fail!!!\n");
 		}
 	}
 
 	res = lwnl_register((struct lwnl_lowerhalf_s *)g_netmgr.dev);
 	if (res < 0) {
-		NET_LOGE(TAG, "!!!register device fail!!!\n");
+		NET_LOGKE(TAG, "!!!register device fail!!!\n");
 	}
 #endif
 
 	struct netstack *stk = get_netstack(TR_SOCKET);
 	NETSTACK_CALL_RET(stk, init, (NULL), res);
 	if (res < 0) {
-		NET_LOGE(TAG, "!!!initialize stack fail!!!\n");
+		NET_LOGKE(TAG, "!!!initialize stack fail!!!\n");
 	}
 	netdev_mgr_start();
 }
@@ -105,16 +108,19 @@ void net_initialize(void)
 #ifdef CONFIG_VIRTUAL_WLAN
 	vwifi_start();
 #endif
+#ifdef CONFIG_VIRTUAL_BLE
+    vble_start();
+#endif
 	/*  start network stack */
 	struct netstack *stk = get_netstack(TR_SOCKET);
 	int res = -1;
 	NETSTACK_CALL_RET(stk, start, (NULL), res);
 	if (res < 0) {
-		NET_LOGE(TAG, "!!!start stack fail!!!\n");
+		NET_LOGKE(TAG, "!!!start stack fail!!!\n");
 		assert(0);
 	}
 	if (trwifi_run_handler() != 0) {
-		NET_LOGE(TAG, "!!!start event handler fail!!!\n");
+		NET_LOGKE(TAG, "!!!start event handler fail!!!\n");
 		assert(0);
 	}
 

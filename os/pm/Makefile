@@ -20,8 +20,8 @@
 
 ASRCS =
 
-CSRCS += pm_activity.c pm_changestate.c pm_checkstate.c pm_initialize.c
-CSRCS += pm_register.c pm_unregister.c pm_update.c pm_procfs.c
+CSRCS += pm_activity.c pm_changestate.c pm_checkstate.c pm_initialize.c pm_sleep.c
+CSRCS += pm_register.c pm_unregister.c pm_procfs.c pm_timedsuspend.c
 
 ifeq ($(CONFIG_PM_METRICS),y)
 CSRCS += pm_metrics.c
@@ -35,8 +35,18 @@ ifeq ($(CONFIG_PM_TEST),y)
 CSRCS += pm_test.c
 endif
 
+ifeq ($(CONFIG_PM_DVFS),y)
+CSRCS += pm_dvfs.c
+endif
+
+ifeq ($(CONFIG_PM_TICKSUPPRESS),y)
+CSRCS += pm_wakehandler.c
+endif
+
 DEPPATH = --dep-path .
 VPATH = .
+
+include pm_timer/Make.defs
 
 COBJS = $(CSRCS:.c=$(OBJEXT))
 

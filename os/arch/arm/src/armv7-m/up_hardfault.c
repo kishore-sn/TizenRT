@@ -61,6 +61,7 @@
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
+#include <tinyara/security_level.h>
 
 #include <tinyara/userspace.h>
 #include <arch/irq.h>
@@ -77,17 +78,10 @@
  * interfere with context switching!
  */
 
-#ifdef CONFIG_DEBUG_HARDFAULT
-#define hfdbg(format, ...) lldbg(format, ##__VA_ARGS__)
-#else
-#define hfdbg(...)
-#endif
 
 #define INSN_SVC0        0xdf00	/* insn: svc 0 */
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
-uint32_t g_assertpc;
-#endif
+uint32_t system_exception_location;
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -99,6 +93,50 @@ uint32_t g_assertpc;
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: print_hardfault_detail
+ ****************************************************************************/
+
+static inline void print_hardfault_detail(int irq, uint32_t *regs)
+{
+	/* Dump some hard fault info */
+
+	lldbg("PANIC!!! Hard fault: %08x\n", getreg32(NVIC_HFAULTS));
+	lldbg("  IRQ: %d regs: %p\n", irq, regs);
+	lldbg("  BASEPRI: %08x PRIMASK: %08x IPSR: %08x CONTROL: %08x\n",
+		  getbasepri(), getprimask(), getipsr(), getcontrol());
+	lldbg("  CFAULTS: %08x HFAULTS: %08x DFAULTS: %08x BFAULTADDR: %08x AFAULTS: %08x\n",
+		  getreg32(NVIC_CFAULTS), getreg32(NVIC_HFAULTS),
+		  getreg32(NVIC_DFAULTS), getreg32(NVIC_BFAULT_ADDR),
+		  getreg32(NVIC_AFAULTS));
+	lldbg("  R0: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		  regs[REG_R0], regs[REG_R1], regs[REG_R2], regs[REG_R3],
+		  regs[REG_R4], regs[REG_R5], regs[REG_R6], regs[REG_R7]);
+	lldbg("  R8: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		  regs[REG_R8], regs[REG_R9], regs[REG_R10], regs[REG_R11],
+		  regs[REG_R12], regs[REG_R13], regs[REG_R14], regs[REG_R15]);
+
+#ifdef CONFIG_ARMV7M_USEBASEPRI
+#ifdef REG_EXC_RETURN
+	lldbg("  xPSR: %08x BASEPRI: %08x EXC_RETURN: %08x (saved)\n",
+		  current_regs[REG_XPSR], current_regs[REG_BASEPRI],
+		  current_regs[REG_EXC_RETURN]);
+#else
+	lldbg("  xPSR: %08x BASEPRI: %08x (saved)\n",
+		  current_regs[REG_XPSR], current_regs[REG_BASEPRI]);
+#endif
+#else
+#ifdef REG_EXC_RETURN
+	lldbg("  xPSR: %08x PRIMASK: %08x EXC_RETURN: %08x (saved)\n",
+		  current_regs[REG_XPSR], current_regs[REG_PRIMASK], current_regs[REG_EXC_RETURN]);
+#else
+	lldbg("  xPSR: %08x PRIMASK: %08x (saved)\n",
+		  current_regs[REG_XPSR], current_regs[REG_PRIMASK]);
+#endif
+#endif
+
+}
 
 /****************************************************************************
  * Public Functions
@@ -115,13 +153,13 @@ uint32_t g_assertpc;
 
 int up_hardfault(int irq, FAR void *context, FAR void *arg)
 {
-#if defined(CONFIG_DEBUG_HARDFAULT) || !defined(CONFIG_ARMV7M_USEBASEPRI) || defined(CONFIG_BINMGR_RECOVERY)
 	uint32_t *regs = (uint32_t *)context;
+	system_exception_location = regs[REG_R15];
+
+#ifdef CONFIG_ARCH_CHIP_STM32H745
+	stm32h745_flash_ecc_handler();
 #endif
 
-#ifdef CONFIG_APP_BINARY_SEPARATION
-	g_assertpc = regs[REG_R15];
-#endif
 	/* Get the value of the program counter where the fault occurred */
 
 #ifndef CONFIG_ARMV7M_USEBASEPRI
@@ -150,57 +188,25 @@ int up_hardfault(int irq, FAR void *context, FAR void *arg)
 		/* Fetch the instruction that caused the Hard fault */
 
 		uint16_t insn = *pc;
-		hfdbg("  PC: %p INSN: %04x\n", pc, insn);
+		sllvdbg("  PC: %p INSN: %04x\n", pc, insn);
 
 		/* If this was the instruction 'svc 0', then forward processing
 		 * to the SVCall handler
 		 */
 
 		if (insn == INSN_SVC0) {
-			hfdbg("Forward SVCall\n");
+			sllvdbg("Forward SVCall\n");
 			return up_svcall(irq, context, arg);
 		}
 	}
 #endif
 
-	/* Dump some hard fault info */
-
-	hfdbg("Hard Fault:\n");
-	hfdbg("  IRQ: %d regs: %p\n", irq, regs);
-	hfdbg("  BASEPRI: %08x PRIMASK: %08x IPSR: %08x CONTROL: %08x\n",
-		  getbasepri(), getprimask(), getipsr(), getcontrol());
-	hfdbg("  CFAULTS: %08x HFAULTS: %08x DFAULTS: %08x BFAULTADDR: %08x AFAULTS: %08x\n",
-		  getreg32(NVIC_CFAULTS), getreg32(NVIC_HFAULTS),
-		  getreg32(NVIC_DFAULTS), getreg32(NVIC_BFAULT_ADDR),
-		  getreg32(NVIC_AFAULTS));
-	hfdbg("  R0: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-		  regs[REG_R0], regs[REG_R1], regs[REG_R2], regs[REG_R3],
-		  regs[REG_R4], regs[REG_R5], regs[REG_R6], regs[REG_R7]);
-	hfdbg("  R8: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-		  regs[REG_R8], regs[REG_R9], regs[REG_R10], regs[REG_R11],
-		  regs[REG_R12], regs[REG_R13], regs[REG_R14], regs[REG_R15]);
-
-#ifdef CONFIG_ARMV7M_USEBASEPRI
-#ifdef REG_EXC_RETURN
-	hfdbg("  xPSR: %08x BASEPRI: %08x EXC_RETURN: %08x (saved)\n",
-		  current_regs[REG_XPSR], current_regs[REG_BASEPRI],
-		  current_regs[REG_EXC_RETURN]);
-#else
-	hfdbg("  xPSR: %08x BASEPRI: %08x (saved)\n",
-		  current_regs[REG_XPSR], current_regs[REG_BASEPRI]);
-#endif
-#else
-#ifdef REG_EXC_RETURN
-	hfdbg("  xPSR: %08x PRIMASK: %08x EXC_RETURN: %08x (saved)\n",
-		  current_regs[REG_XPSR], current_regs[REG_PRIMASK], current_regs[REG_EXC_RETURN]);
-#else
-	hfdbg("  xPSR: %08x PRIMASK: %08x (saved)\n",
-		  current_regs[REG_XPSR], current_regs[REG_PRIMASK]);
-#endif
-#endif
+	if (!IS_SECURE_STATE()) {
+		print_hardfault_detail(irq, regs);
+	}
 
 	(void)irqsave();
-	lldbg("PANIC!!! Hard fault: %08x\n", getreg32(NVIC_HFAULTS));
+
 	PANIC();
 	return OK;
 }

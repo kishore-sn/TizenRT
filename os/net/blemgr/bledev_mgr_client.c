@@ -25,7 +25,7 @@
 
 #define BLE_DRV_TAG "[BLEDRV_CLIENT]"
 
-static void _reverse_mac(uint8_t *mac)
+static inline void _reverse_mac(uint8_t *mac)
 {
 	int i;
 	int j;
@@ -46,8 +46,8 @@ static void bledrv_scan_state_changed_cb(trble_scan_state_e scan_state)
 
 static void bledrv_device_scanned_cb(trble_scanned_device *scanned_device)
 {
-	_reverse_mac(scanned_device->conn_info.addr.mac);
-	trble_post_event(LWNL_EVT_BLE_SCAN_DATA, scanned_device, sizeof(trble_scanned_device));
+	_reverse_mac(scanned_device->addr.mac);
+	trble_scan_data_enque(scanned_device);
 	return;
 }
 
@@ -66,7 +66,7 @@ static void bledrv_device_connected_cb(trble_device_connected *dev)
 
 static void bledrv_operation_notification_cb(trble_operation_handle *handle, trble_data *read_result)
 {
-	uint32_t size = sizeof(trble_conn_handle) + sizeof(trble_attr_handle) + sizeof(read_result->length) + read_result->length;
+	int32_t size = sizeof(trble_conn_handle) + sizeof(trble_attr_handle) + sizeof(read_result->length) + read_result->length;
 	uint8_t *data = (uint8_t *)kmm_malloc(size);
 	if (data == NULL) {
 		BLE_LOGE(BLE_DRV_TAG, "out of memroy\n");
@@ -89,9 +89,38 @@ static void bledrv_operation_notification_cb(trble_operation_handle *handle, trb
 	// Copy read_result data
 	memcpy(ptr, read_result->data, read_result->length);
 
-	trble_post_event(LWNL_EVT_BLE_CLIENT_NOTI, data, size);
+	trble_post_event(LWNL_EVT_BLE_CLIENT_NOTI, data, -(size));
 
-	kmm_free(data);
+	return;
+}
+
+static void bledrv_operation_indication_cb(trble_operation_handle *handle, trble_data *read_result)
+{
+	int32_t size = sizeof(trble_conn_handle) + sizeof(trble_attr_handle) + sizeof(read_result->length) + read_result->length;
+	uint8_t *data = (uint8_t *)kmm_malloc(size);
+	if (data == NULL) {
+		BLE_LOGE(BLE_DRV_TAG, "out of memroy\n");
+		return;
+	}
+	uint8_t *ptr = data;
+
+	// Copy conn handle
+	memcpy(ptr, &(handle->conn_handle), sizeof(trble_conn_handle));
+	ptr += sizeof(trble_conn_handle);
+
+	// Copy attr handle
+	memcpy(ptr, &(handle->attr_handle), sizeof(trble_attr_handle));
+	ptr += sizeof(trble_attr_handle);
+
+	// Copy read_result len
+	memcpy(ptr, &(read_result->length), sizeof(read_result->length));
+	ptr += sizeof(read_result->length);
+
+	// Copy read_result data
+	memcpy(ptr, read_result->data, read_result->length);
+
+	trble_post_event(LWNL_EVT_BLE_CLIENT_INDI, data, -(size));
+
 	return;
 }
 
@@ -101,7 +130,8 @@ static trble_client_init_config g_client_fake_config = {
 	bledrv_device_disconnected_cb,
 	bledrv_device_connected_cb,
 	bledrv_operation_notification_cb,
-	240
+	bledrv_operation_indication_cb,
+	247
 };
 
 trble_client_init_config *bledrv_client_get_fake_config(void)

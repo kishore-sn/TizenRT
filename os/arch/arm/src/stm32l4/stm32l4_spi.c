@@ -238,7 +238,7 @@ static void        spi_bus_initialize(FAR struct stm32l4_spidev_s *priv);
 /* PM interface */
 
 #ifdef CONFIG_PM
-static int         spi_pm_prepare(FAR struct pm_callback_s *cb, int domain,
+static int         spi_pm_prepare(FAR struct pm_callback_s *cb,
                                   enum pm_state_e pmstate);
 #endif
 
@@ -1567,7 +1567,7 @@ static void spi_sndblock(FAR struct spi_dev_s *dev, FAR const void *txbuffer, si
  *
  * Input Parameters:
  *   dev      - Device-specific state data
- *   rxbuffer - A pointer to the buffer in which to recieve data
+ *   rxbuffer - A pointer to the buffer in which to receive data
  *   nwords   - the length of data that can be received in the buffer in number
  *              of words.  The wordsize is determined by the number of bits-per-word
  *              selected for the SPI interface.  If nbits <= 8, the data is
@@ -1616,7 +1616,7 @@ static void spi_recvblock(FAR struct spi_dev_s *dev, FAR void *rxbuffer, size_t 
  ************************************************************************************/
 
 #ifdef CONFIG_PM
-static int spi_pm_prepare(FAR struct pm_callback_s *cb, int domain,
+static int spi_pm_prepare(FAR struct pm_callback_s *cb,
                           enum pm_state_e pmstate)
 {
   struct stm32l4_spidev_s *priv =

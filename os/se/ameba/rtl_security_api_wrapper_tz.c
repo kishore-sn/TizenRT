@@ -17,6 +17,7 @@
 ***************************************************************************************************/
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "flash_api.h"
 #include "device_lock.h"
@@ -29,10 +30,19 @@ typedef struct {
 	void (*device_unlock)(uint32_t);
 	void (*setstatusbits)(uint32_t);
 	int (*get_random_bytes)(void *, uint32_t);
+	void (*info_printf)(const char *);
 } nsfunc_ops_s;
 
-/* Flash Status Bit */
+/* Flash Status Bit Protect Lower 512KB */
+#ifdef CONFIG_AMEBAD_TRUSTZONE
 #define FLASH_STATUS_BITS 0x2c
+#endif
+#ifdef CONFIG_AMEBALITE_TRUSTZONE
+#define FLASH_STATUS_BITS 0x2c
+#endif
+#ifdef CONFIG_AMEBASMART_TRUSTZONE
+#define FLASH_STATUS_BITS 0x28
+#endif
 
 nsfunc_ops_s ns_func;
 
@@ -41,9 +51,7 @@ static void ns_flash_erase(uint32_t address)
 {
 	flash_t flash;
 
-	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	flash_erase_sector(&flash, address);
-	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 }
 
 static int ns_flash_read(uint32_t address, uint32_t len, uint8_t *data)
@@ -51,9 +59,7 @@ static int ns_flash_read(uint32_t address, uint32_t len, uint8_t *data)
 	int ret;
 	flash_t flash;
 
-	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	ret = flash_stream_read(&flash, address, len, data);
-	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 	return ret;
 }
@@ -63,22 +69,55 @@ static int ns_flash_write(uint32_t address, uint32_t len, uint8_t *data)
 	int ret;
 	flash_t flash;
 
-	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	ret = flash_stream_write(&flash, address, len, data);
-	device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+	return ret;
+}
+
+/* Verify Flash Data Function */
+int rtl_ss_flash_read(uint32_t address, uint32_t len, uint8_t *data, int en_display)
+{
+	int ret;
+	flash_t flash;
+
+	ret = flash_stream_read(&flash, address, len, data);
+	if (ret) {
+		if (en_display){
+			printf("\n\r---- [Address = %02x] Start [len = %d]-----\n", address, len);
+			for(int i = 0; i < len; i++){
+				printf("%02x ", data[i]);
+				if (!((i + 1) % 16)) {
+					printf("\n");
+				}
+			}
+			printf("\n\r---- [%s] End -----\n", __FUNCTION__);
+		}
+	}
 
 	return ret;
 }
 
 static void ns_setstatusbits(u32 NewState)
 {
-	device_mutex_lock(RT_DEV_LOCK_FLASH);
 	FLASH_Write_Lock();
 	FLASH_SetStatusBits(FLASH_STATUS_BITS, NewState);
 	FLASH_Write_Unlock();
-	device_mutex_unlock(RT_DEV_LOCK_FLASH);
 }
 
+static void ns_printf(const char *input)
+{
+	printf("%s\n", input);
+}
+
+
+
+#ifdef CONFIG_AMEBASMART_TRUSTZONE
+void *rtl_set_ns_func(void)
+{
+	/* No need for RTL8730E */
+	return NULL;
+}
+#else
 extern int rtw_get_random_bytes(void *dst, u32 size);
 void *rtl_set_ns_func(void)
 {
@@ -89,6 +128,8 @@ void *rtl_set_ns_func(void)
 	ns_func.device_unlock = device_mutex_unlock;
 	ns_func.setstatusbits = ns_setstatusbits;
 	ns_func.get_random_bytes = rtw_get_random_bytes;
+	ns_func.info_printf = ns_printf;
 
 	return (void *)&ns_func;
 }
+#endif

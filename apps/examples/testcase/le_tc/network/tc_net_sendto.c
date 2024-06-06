@@ -18,6 +18,7 @@
 
 // @file tc_net_sendto.c
 // @brief Test Case Example for sendto() API
+
 #include <tinyara/config.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -38,18 +39,20 @@
 #define PORTNUM 7891
 #define TCPPORT 7890
 #define MAXRCVLEN 20
+
 static int sp = 0;
+
 void tc_net_sendto_tcp_n(int connect_fd);
 void tc_net_sendto_tcp_shutdown_n(int connect_fd);
 
 /**
-   * @testcase		   :tc_net_sendto_p
-   * @brief		   :positive testcase for sendto api using udp
-   * @scenario		   :
-   * @apicovered	   :sendto()
-   * @precondition	   :
-   * @postcondition	   :
-   */
+ * @testcase		   :tc_net_sendto_p
+ * @brief		   :positive testcase for sendto api using udp
+ * @scenario		   :
+ * @apicovered	   :sendto()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_sendto_p(int fd)
 {
 	char *buffer = "hello";
@@ -65,17 +68,16 @@ void tc_net_sendto_p(int fd)
 
 	TC_ASSERT_NEQ("sendto", ret, -1);
 	TC_SUCCESS_RESULT();
-
 }
 
 /**
-   * @testcase		   :tc_net_sendto_n
-   * @brief		   :negative testcase for sendto api using udp
-   * @scenario		   :
-   * @apicovered	   :sendto()
-   * @precondition	   :
-   * @postcondition	   :
-   */
+ * @testcase		   :tc_net_sendto_n
+ * @brief		   :negative testcase for sendto api using udp
+ * @scenario		   :
+ * @apicovered	   :sendto()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_sendto_n(void)
 {
 	char *buffer = "hello";
@@ -91,72 +93,17 @@ void tc_net_sendto_n(void)
 
 	TC_ASSERT_EQ("sendto", ret, -1);
 	TC_SUCCESS_RESULT();
-
 }
-#ifdef AF_UNIX
+
 /**
-   * @testcase		   :tc_net_sendto_af_unix_n
-   * @brief		   :negative testcase for sendto api using udp
-   * @scenario		   :
-   * @apicovered	   :sendto()
-   * @precondition	   :
-   * @postcondition	   :
-   */
-void tc_net_sendto_af_unix_n(int fd)
-{
-	char *buffer = "hello";
-	int len = strlen(buffer) + 1;
-	struct sockaddr_in dest;
-	socklen_t fromlen;
-	memset(&dest, 0, sizeof(dest));
-	dest.sin_family = AF_UNIX;
-	dest.sin_addr.s_addr = inet_addr("127.0.0.1");
-	dest.sin_port = htons(PORTNUM);
-	fromlen = sizeof(dest);
-	int ret = sendto(fd, buffer, len, 0, (struct sockaddr *)&dest, fromlen);
-
-	TC_ASSERT_EQ("sendto", ret, -1);
-	TC_SUCCESS_RESULT();
-
-}
-#endif
-#ifdef AF_UNIX
-/**
-   * @testcase		   :tc_net_sendto_shutdown_n
-   * @brief		   :negative testcase for sendto api using udp
-   * @scenario		   :
-   * @apicovered	   :sendto()
-   * @precondition	   :
-   * @postcondition	   :
-   */
-void tc_net_sendto_shutdown_n(int fd)
-{
-	char *buffer = "hello";
-	int len = strlen(buffer) + 1;
-	struct sockaddr_in dest;
-	socklen_t fromlen;
-	memset(&dest, 0, sizeof(dest));
-	dest.sin_family = AF_UNIX;
-	dest.sin_addr.s_addr = inet_addr("127.0.0.1");
-	dest.sin_port = htons(PORTNUM);
-	fromlen = sizeof(dest);
-	shutdown(fd, SHUT_WR);
-	int ret = sendto(fd, buffer, len, 0, (struct sockaddr *)&dest, fromlen);
-
-	TC_ASSERT_EQ("sendto", ret, -1);
-	TC_SUCCESS_RESULT();
-
-}
-#endif
-/**
-   * @fn                   :sendto_server
-   * @brief                :udp server
-   * @scenario             :
-   * API's covered         :socket,bind,recvfrom
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void *
-   */
+ * @fn                   :sendto_server
+ * @brief                :udp server
+ * @scenario             :
+ * API's covered         :socket,bind,recvfrom
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void *
+ */
 
 void *sendto_udpserver(void *args)
 {
@@ -190,18 +137,17 @@ void *sendto_udpserver(void *args)
 	close(socket_fd);
 
 	return 0;
-
 }
 
 /**
-   * @fn                   :sendto_client
-   * @brief                :udp client
-   * @scenario             :
-   * API's covered         :socket
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void *
-   */
+ * @fn                   :sendto_client
+ * @brief                :udp client
+ * @scenario             :
+ * API's covered         :socket
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void *
+ */
 void *sendto_udpclient(void *args)
 {
 	int mysocket;
@@ -212,25 +158,20 @@ void *sendto_udpclient(void *args)
 	}
 	tc_net_sendto_p(mysocket);
 	tc_net_sendto_n();
-#ifdef AF_UNIX
-	tc_net_sendto_af_unix_n(mysocket);
-	tc_net_sendto_shutdown_n(mysocket);
-#endif
 	close(mysocket);
 
 	return 0;
-
 }
 
 /**
-   * @fn                   :sendto_wait
-   * @brief                :function to wait on semaphore
-   * @scenario             :
-   * API's covered         :
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void
-   */
+ * @fn                   :sendto_wait
+ * @brief                :function to wait on semaphore
+ * @scenario             :
+ * API's covered         :
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void
+ */
 void sendto_wait(void)
 {
 	while (sp <= 0) {
@@ -241,27 +182,27 @@ void sendto_wait(void)
 }
 
 /**
-   * @fn                   :sendto_signal
-   * @brief                :function to signal semaphore
-   * @scenario             :
-   * API's covered         :
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void
-   */
+ * @fn                   :sendto_signal
+ * @brief                :function to signal semaphore
+ * @scenario             :
+ * API's covered         :
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void
+ */
 void sendto_signal(void)
 {
 	sp++;
 }
 
 /**
-   * @testcase		   :tc_net_sendto_tcp_p
-   * @brief		   :positive testcase for sendto api using tcp
-   * @scenario		   :
-   * @apicovered	   :accept(), sendto()
-   * @precondition	   :
-   * @postcondition	   :
-   */
+ * @testcase		   :tc_net_sendto_tcp_p
+ * @brief		   :positive testcase for sendto api using tcp
+ * @scenario		   :
+ * @apicovered	   :accept(), sendto()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_sendto_tcp_p(int fd)
 {
 
@@ -279,17 +220,16 @@ void tc_net_sendto_tcp_p(int fd)
 
 	tc_net_sendto_tcp_n(connect_fd);
 	tc_net_sendto_tcp_shutdown_n(connect_fd);
-
 }
 
 /**
-   * @testcase		   :tc_net_sendto_tcp_n
-   * @brief		   :negative testcase for sendto api using tcp
-   * @scenario		   :
-   * @apicovered	   :sendto(), close()
-   * @precondition	   :
-   * @postcondition	   :
-   */
+ * @testcase		   :tc_net_sendto_tcp_n
+ * @brief		   :negative testcase for sendto api using tcp
+ * @scenario		   :
+ * @apicovered	   :sendto(), close()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_sendto_tcp_n(int connect_fd)
 {
 
@@ -302,17 +242,16 @@ void tc_net_sendto_tcp_n(int connect_fd)
 	TC_SUCCESS_RESULT();
 
 	close(connect_fd);
-
 }
 
 /**
-   * @testcase		   :tc_net_sendto_tcp_shutdown_n
-   * @brief		   :negative testcase for sendto api using tcp
-   * @scenario		   :
-   * @apicovered	   :sendto(), close()
-   * @precondition	   :
-   * @postcondition	   :
-   */
+ * @testcase		   :tc_net_sendto_tcp_shutdown_n
+ * @brief		   :negative testcase for sendto api using tcp
+ * @scenario		   :
+ * @apicovered	   :sendto(), close()
+ * @precondition	   :
+ * @postcondition	   :
+ */
 void tc_net_sendto_tcp_shutdown_n(int connect_fd)
 {
 
@@ -325,19 +264,17 @@ void tc_net_sendto_tcp_shutdown_n(int connect_fd)
 	TC_SUCCESS_RESULT();
 
 	close(connect_fd);
-
 }
 
 /**
-   * @fn                   :sendto_server
-   * @brief                :tcp server
-   * @scenario             :
-   * API's covered         :socket,bind,listen,close
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void *
-   */
-
+ * @fn                   :sendto_server
+ * @brief                :tcp server
+ * @scenario             :
+ * API's covered         :socket,bind,listen,close
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void *
+ */
 void *sendto_tcpserver(void *args)
 {
 	struct sockaddr_in sa;
@@ -378,18 +315,17 @@ void *sendto_tcpserver(void *args)
 
 	close(socket_fd);
 	pthread_exit(NULL);
-
 }
 
 /**
-   * @fn                   :sendto_client
-   * @brief                :tcp client
-   * @scenario             :
-   * API's covered         :socket,connect,recvfrom,close
-   * Preconditions         :
-   * Postconditions        :
-   * @return               :void *
-   */
+ * @fn                   :sendto_client
+ * @brief                :tcp client
+ * @scenario             :
+ * API's covered         :socket,connect,recvfrom,close
+ * Preconditions         :
+ * Postconditions        :
+ * @return               :void *
+ */
 void *sendto_tcpclient(void *args)
 {
 
@@ -421,16 +357,13 @@ void *sendto_tcpclient(void *args)
 
 	close(mysocket);
 	pthread_exit(NULL);
-
 }
 
 /****************************************************************************
  * Name: sendto()
  ****************************************************************************/
-
 int net_sendto_main(void)
 {
-
 	pthread_t Server, Client, tcpserver, tcpclient;
 
 	sp = 0;
@@ -441,10 +374,9 @@ int net_sendto_main(void)
 	pthread_create(&tcpclient, NULL, sendto_tcpclient, NULL);
 
 	pthread_join(Server, NULL);
-
 	pthread_join(Client, NULL);
 	pthread_join(tcpserver, NULL);
-
 	pthread_join(tcpclient, NULL);
+
 	return 0;
 }

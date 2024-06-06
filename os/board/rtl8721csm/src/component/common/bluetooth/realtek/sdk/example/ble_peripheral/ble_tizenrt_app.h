@@ -27,6 +27,7 @@ extern "C" {
 #include <profile_server.h>
 #include <tinyara/net/if/ble.h>
 #include <tizenrt_ble_common.h>
+#include <osdep_service.h>
 /*============================================================================*
  *                              Variables
  *============================================================================*/
@@ -34,72 +35,89 @@ extern "C" {
 /*============================================================================*
  *                              Functions
  *============================================================================*/
-#define RTK_DEBUG_ON 0
-#if RTK_DEBUG_ON
-#define debug_print printf
-#else
-#if defined CONFIG_AMEBAD_BLE_SCATTERNET && CONFIG_AMEBAD_BLE_SCATTERNET
-extern void print_no_combo(const char* format, ...);
-#define debug_print print_no_combo
-#else
-extern void print_no_server(const char* format, ...);
-#define debug_print print_no_server
-#endif
-#endif
+#define debug_print blevdbg
+//#define CONFIG_DEBUG_SCAN_INFO
 
 typedef enum
 {
-	BLE_TIZENRT_MSG_START_ADV = 12,
-	BLE_TIZENRT_MSG_STOP_ADV,
-	BLE_TIZENRT_MSG_DISCONNECT,
-	BLE_TIZENRT_MSG_NOTIFY,
-	BLE_TIZENRT_MSG_DELETE_BOND,
-	BLE_TIZENRT_MSG_DELETE_BOND_ALL,
-	BLE_TIZENRT_SERVER_MSG_MAX
+    BLE_TIZENRT_MSG_START_ADV = 13,
+    BLE_TIZENRT_MSG_STOP_ADV,
+    BLE_TIZENRT_MSG_DISCONNECT,
+    BLE_TIZENRT_MSG_NOTIFY,
+    BLE_TIZENRT_MSG_INDICATE,
+    BLE_TIZENRT_MSG_DELETE_BOND,
+    BLE_TIZENRT_MSG_DELETE_BOND_ALL,
+    BLE_TIZENRT_MSG_CONN_PARAM_UPDATE,
+    BLE_TIZENRT_SERVER_MSG_MAX
 } BLE_TIZENRT_SERVER_MSG_TYPE;
 
 typedef enum
 {
 	BLE_TIZENRT_CALLBACK_TYPE_CONN = 8,
-	BLE_TIZENRT_CALLBACK_TYPE_PROFILE,
-  BLE_TIZENRT_CALLBACK_TYPE_MAX
+    BLE_TIZENRT_CALLBACK_TYPE_PROFILE,
+    BLE_TIZENRT_CALLBACK_TYPE_MTU_UPDATE,
+    BLE_TIZENRT_CALLBACK_TYPE_ONESHOT_ADV,
+    BLE_TIZENRT_CALLBACK_TYPE_MAX,
 } BLE_TIZENRT_CALLBACK_TYPE;
 
 typedef struct
 {
-  trble_attr_handle att_handle;
-  trble_conn_handle conn_id;
-	uint8_t	 *data;
-  uint16_t len;
+    trble_attr_handle att_handle;
+    trble_conn_handle conn_id;
+    uint8_t	 *data;
+    uint16_t len;
 } T_TIZENRT_NOTIFY_PARAM;
 
 typedef struct
 {
-  uint8_t bd_addr[TRBLE_BD_ADDR_MAX_LEN];
+    trble_conn_handle conn_id;
+    uint16_t min_conn_interval;
+    uint16_t max_conn_interval;
+    uint16_t slave_latency;
+    uint16_t supervision_timeout;
+} T_TIZENRT_CONN_UPDATE_PARAM;
+
+typedef struct
+{
+    trble_attr_handle att_handle;
+    trble_conn_handle conn_id;
+    uint8_t	 *data;
+    uint16_t len;
+} T_TIZENRT_INDICATE_PARAM;
+
+typedef struct
+{
+    uint8_t bd_addr[TRBLE_BD_ADDR_MAX_LEN];
 } T_TIZENRT_DIRECT_ADV_PARAM;
 
 typedef struct
 {
-  bool flag;
-  T_GAP_CAUSE result;
-  uint8_t bd_addr[TRBLE_BD_ADDR_MAX_LEN];
+    bool flag;
+    T_GAP_CAUSE result;
+    uint8_t bd_addr[TRBLE_BD_ADDR_MAX_LEN];
 } T_TIZENRT_SERVER_DELETE_BOND_PARAM;
 
 typedef struct
 {
-	trble_attr_cb_type_e type;
-  trble_conn_handle conn_id;
-  trble_attr_handle att_handle;
-  void *arg;
-  trble_server_cb_t cb;
+    trble_attr_cb_type_e type;
+    trble_conn_handle conn_id;
+    trble_attr_handle att_handle;
+    void *arg;
+    trble_server_cb_t cb;
 } T_TIZENRT_PROFILE_CALLBACK_DATA;
 
 typedef struct
 {
-	trble_conn_handle conn_id;
-  trble_server_connection_type_e conn_type;
-  uint8_t remote_bd[TRBLE_BD_ADDR_MAX_LEN];
+    trble_conn_handle conn_id;
+    trble_server_connection_type_e conn_type;
+    uint8_t remote_bd[TRBLE_BD_ADDR_MAX_LEN];
 } T_TIZENRT_CONNECTED_CALLBACK_DATA;
+
+typedef struct
+{
+    trble_conn_handle conn_id;
+    uint16_t mtu_size;
+} T_TIZENRT_MTU_UPDATE_CALLBACK_DATA;
 
 
 /**

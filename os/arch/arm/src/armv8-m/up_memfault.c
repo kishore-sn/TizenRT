@@ -63,6 +63,7 @@
 
 #include <assert.h>
 #include <debug.h>
+#include <tinyara/security_level.h>
 
 #include <arch/irq.h>
 
@@ -75,6 +76,7 @@
 #include "nvic.h"
 #include "up_internal.h"
 
+extern uint32_t system_exception_location;
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -99,6 +101,37 @@
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: print_memfault_detail
+ ****************************************************************************/
+
+static inline void print_memfault_detail(uint32_t *regs, uint32_t cfsr, uint32_t mmfar)
+{
+	lldbg("#########################################################################\n");
+	lldbg("PANIC!!! Memory Management Fault at instruction : 0x%08x\n", regs[REG_R15]);
+
+	if (cfsr & DACCVIOL) {
+		lldbg("FAULT TYPE: DACCVIOL (Data access violation occurred. Check MPU RW permissions).\n");
+	} else if (cfsr & IACCVIOL) {
+		lldbg("FAULT TYPE: IACCVIOL (Instruction access violation occurred. Check MPU XN region).\n");
+	} else if (cfsr & MSTKERR) {
+		lldbg("FAULT TYPE: MSTKERR (Error while stacking registers during exception entry).\n");
+	} else if (cfsr & MUNSTKERR) {
+		lldbg("FAULT TYPE: MUNSTKERR (Error while unstacking registers during exception return).\n");
+	} else if (cfsr & MLSPERR) {
+		lldbg("FAULT TYPE: MLSPERR (Error occurred during lazy state preservation of Floating Point unit registers).\n");
+	}
+
+	if (cfsr & MMARVALID) {
+		lldbg("FAULT ADDRESS: 0x%08x\n", mmfar);
+	} else {
+		lldbg("FAULT ADDRESS: Unable to determine fault address.\n");
+	}
+
+	lldbg("FAULT REGS: CFAULTS: 0x%08x MMFAR: 0x%08x\n", cfsr, mmfar);
+	lldbg("#########################################################################\n\n\n");
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -121,25 +154,13 @@ int up_memfault(int irq, FAR void *context, FAR void *arg)
 	uint32_t *regs = (uint32_t *)context;
 	uint32_t cfsr = getreg32(NVIC_CFAULTS);
 	uint32_t mmfar = getreg32(NVIC_MEMMANAGE_ADDR);
-	lldbg("PANIC!!! Memory Management Fault occurred while executing instruction at address : 0x%08x\n", regs[REG_R15]);
-	lldbg("CFAULTS: 0x%08x MMFAR: 0x%08x\n", cfsr, mmfar);
-
-	if (cfsr & MMARVALID) {
-		lldbg("Access violation occurred at address (MMFAR) : 0x%08x\n", mmfar);
-	} else {
-		lldbg("Unable to determine access violation address.\n");
+	system_exception_location = regs[REG_R15];
+	if (cfsr & IACCVIOL) {
+		system_exception_location = regs[REG_R14];	/* The PC value might be invalid, so use LR */
 	}
 
-	if (cfsr & DACCVIOL) {
-		lldbg("Data access violation occurred.\n");
-	} else if (cfsr & IACCVIOL) {
-		lldbg("Instruction access violation occurred while fetching instruction from an Execute Never (XN) region.\n");
-	} else if (cfsr & MSTKERR) {
-		lldbg("Error while stacking registers during exception entry.\n");
-	} else if (cfsr & MUNSTKERR) {
-		lldbg("Error while unstacking registers during exception return.\n");
-	} else if (cfsr & MLSPERR) {
-		lldbg("Error occurred during lazy state preservation of Floating Point unit registers.\n");
+	if (!IS_SECURE_STATE()) {
+		print_memfault_detail(regs, cfsr, mmfar);
 	}
 
 #ifdef CONFIG_SYSTEM_REBOOT_REASON

@@ -253,7 +253,7 @@ int wd_start(WDOG_ID wdog, int delay, wdentry_t wdentry, int argc, ...)
 	 * the critical section is established.
 	 */
 
-	state = irqsave();
+	state = enter_critical_section();
 	if (WDOG_ISACTIVE(wdog)) {
 		wd_cancel(wdog);
 	}
@@ -377,7 +377,7 @@ int wd_start(WDOG_ID wdog, int delay, wdentry_t wdentry, int argc, ...)
 	sched_timer_resume();
 #endif
 
-	irqrestore(state);
+	leave_critical_section(state);
 	return OK;
 }
 
@@ -466,7 +466,6 @@ void wd_timer(void)
 #ifdef CONFIG_SCHED_TICKSUPPRESS
 void wd_timer_nohz(int ticks)
 {
-	int ret;
 	FAR struct wdog_s *wdog;
 	int decr;
 
@@ -491,6 +490,5 @@ void wd_timer_nohz(int ticks)
 		wd_expiration();
 	}
 
-	return ret;
 }
 #endif

@@ -75,6 +75,12 @@ SYSCALL_LOOKUP(sched_unlock,              0, STUB_sched_unlock)
 SYSCALL_LOOKUP(sched_yield,               0, STUB_sched_yield)
 SYSCALL_LOOKUP(set_errno,                 1, STUB_set_errno)
 
+#ifdef CONFIG_SMP
+SYSCALL_LOOKUP(sched_getaffinity,         3, STUB_sched_getaffinity)
+SYSCALL_LOOKUP(sched_setaffinity,         3, STUB_sched_setaffinity)
+SYSCALL_LOOKUP(sched_getcpu,              0, STUB_sched_getcpu)
+#endif
+
 /* Semaphores */
 
 SYSCALL_LOOKUP(sem_destroy,               1, STUB_sem_destroy)
@@ -238,7 +244,7 @@ SYSCALL_LOOKUP(stat,                    2, STUB_stat)
 SYSCALL_LOOKUP(statfs,                  2, STUB_statfs)
 
 #  if CONFIG_NFILE_STREAMS > 0
-SYSCALL_LOOKUP(fdopen,                  3, STUB_fs_fdopen)
+SYSCALL_LOOKUP(fs_fdopen,               3, STUB_fs_fdopen)
 SYSCALL_LOOKUP(sched_getstreams,        0, STUB_sched_getstreams)
 #  endif
 
@@ -287,6 +293,10 @@ SYSCALL_LOOKUP(pthread_mutex_trylock,   1, STUB_pthread_mutex_trylock)
 SYSCALL_LOOKUP(pthread_mutex_unlock,    1, STUB_pthread_mutex_unlock)
 #ifndef CONFIG_PTHREAD_MUTEX_UNSAFE
 SYSCALL_LOOKUP(pthread_mutex_consistent, 1, STUB_pthread_mutex_consistent)
+#endif
+#ifdef CONFIG_SMP
+SYSCALL_LOOKUP(pthread_setaffinity_np,  3, STUB_pthread_setaffinity_np)
+SYSCALL_LOOKUP(pthread_getaffinity_np,  3, STUB_pthread_getaffinity_np)
 #endif
 SYSCALL_LOOKUP(pthread_setschedparam,   3, STUB_pthread_setschedparam)
 SYSCALL_LOOKUP(pthread_setschedprio,    2, STUB_pthread_setschedprio)
@@ -338,6 +348,7 @@ SYSCALL_LOOKUP(recv,                    4, STUB_recv)
 SYSCALL_LOOKUP(recvfrom,                6, STUB_recvfrom)
 SYSCALL_LOOKUP(recvmsg,                 3, STUB_recvmsg)
 SYSCALL_LOOKUP(send,                    4, STUB_send)
+SYSCALL_LOOKUP(sendmsg,                 3, STUB_sendmsg)
 SYSCALL_LOOKUP(sendto,                  6, STUB_sendto)
 SYSCALL_LOOKUP(setsockopt,              5, STUB_setsockopt)
 SYSCALL_LOOKUP(shutdown,                2, STUB_shutdown)

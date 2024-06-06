@@ -26,6 +26,7 @@
 #include <sys/prctl.h>
 
 #include <tinyara/preference.h>
+#include <preference/preference.h>
 
 #include "preference_internal.h"
 
@@ -98,6 +99,24 @@ int preference_set_string(const char *key, char *value)
 	data.type = PRIVATE_PREFERENCE;
 	data.attr.type = PREFERENCE_TYPE_STRING;
 	data.attr.len = strlen(value) + 1;
+	data.value = value;
+
+	/* Set preference with prctl */
+	return prctl(PR_SET_PREFERENCE, &data);
+}
+
+int preference_set_binary(const char *key, void *value, int len)
+{
+	preference_data_t data;
+
+	if (key == NULL || value == NULL || len <= 0) {
+		return PREFERENCE_INVALID_PARAMETER;
+	}
+
+	data.key = key;
+	data.type = PRIVATE_PREFERENCE;
+	data.attr.type = PREFERENCE_TYPE_BINARY;
+	data.attr.len = len;
 	data.value = value;
 
 	/* Set preference with prctl */
@@ -198,6 +217,29 @@ int preference_get_string(const char *key, char **value)
 	return ret;
 }
 
+int preference_get_binary(const char *key, void **value, int *len)
+{
+	int ret;
+	preference_data_t data;
+
+	if (key == NULL || value == NULL || len == NULL) {
+		return PREFERENCE_INVALID_PARAMETER;
+	}
+
+	data.key = key;
+	data.type = PRIVATE_PREFERENCE;
+	data.attr.type = PREFERENCE_TYPE_BINARY;
+
+	/* Get preference with prctl */
+	ret = prctl(PR_GET_PREFERENCE, &data);
+	if (ret == OK) {
+		*value = (void *)data.value;
+		*len = data.attr.len;
+	}
+
+	return ret;
+}
+
 /****************************************************************************
  * Check Functions
  ****************************************************************************/
@@ -235,7 +277,7 @@ int preference_remove_all(void)
 /****************************************************************************
  * Callback Functions
  ****************************************************************************/
-int preference_set_changed_cb(char *key, preference_changed_cb callback, void *user_data)
+int preference_set_changed_cb(const char *key, preference_changed_cb callback, void *user_data)
 {
 	int ret;
 	struct sigaction act;
@@ -253,7 +295,7 @@ int preference_set_changed_cb(char *key, preference_changed_cb callback, void *u
 	
 	ret = sigaction(SIG_PREFERENCE, &act, NULL);
 	if (ret != OK) {
-		prefdbg("sigaction fail, errno %d", errno);
+		prefdbg("sigaction fail, errno %d", get_errno());
 		return PREFERENCE_OPERATION_FAIL;
 	}
 
@@ -266,7 +308,7 @@ int preference_set_changed_cb(char *key, preference_changed_cb callback, void *u
 	return prctl(PR_SET_PREFERENCE_CB, &data);
 }
 
-int preference_unset_changed_cb(char *key)
+int preference_unset_changed_cb(const char *key)
 {
 	if (key == NULL) {
 		return PREFERENCE_INVALID_PARAMETER;

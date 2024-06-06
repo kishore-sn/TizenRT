@@ -100,9 +100,6 @@
 #define LIBELF_NALLOC      1
 #endif
 
-/* Uncompressed elf representation */
-#define COMPRESS_TYPE_NONE 0
-
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -112,70 +109,49 @@
  */
 
 struct elf_loadinfo_s {
-	/* elfalloc is the base address of the memory that is allocated to hold the
-	 * ELF program image.
-	 *
-	 * If CONFIG_ARCH_ADDRENV=n, elfalloc will be allocated using kmm_malloc() (or
-	 * kmm_zalloc()).  If CONFIG_ARCH_ADDRENV-y, then elfalloc will be allocated using
-	 * up_addrenv_create().  In either case, there will be a unique instance
-	 * of elfalloc (and stack) for each instance of a process.
-	 *
-	 * The alloc[] array in struct binary_s will hold memory that persists after
-	 * the ELF module has been loaded.
-	 */
-
-	uintptr_t textalloc;		/* .text memory allocated when ELF file was loaded */
-	uintptr_t dataalloc;		/* .bss/.data memory allocated when ELF file was loaded */
-	size_t textsize;			/* Size of the ELF .text memory allocation */
-	size_t datasize;			/* Size of the ELF .bss/.data memory allocation */
+	int filfd;				/* Descriptor for the file being loaded */
 	off_t filelen;				/* Length of the entire ELF file */
+	uint16_t offset;    		        /* elf offset when binary header is included */
 	Elf32_Ehdr ehdr;			/* Buffered ELF file header */
-	FAR Elf32_Shdr *shdr;		/* Buffered ELF section headers */
+	FAR Elf32_Shdr *shdr;			/* Buffered ELF section headers */
 	uint8_t *iobuffer;			/* File I/O buffer */
 
-	/* Constructors and destructors */
-
 #ifdef CONFIG_BINFMT_CONSTRUCTORS
-	FAR void *ctoralloc;		/* Memory allocated for ctors */
-	FAR void *dtoralloc;		/* Memory allocated dtors */
-	FAR binfmt_ctor_t *ctors;	/* Pointer to a list of constructors */
-	FAR binfmt_dtor_t *dtors;	/* Pointer to a list of destructors */
+	FAR binfmt_ctor_t *ctors;		/* Pointer to a list of constructors */
+	FAR binfmt_dtor_t *dtors;		/* Pointer to a list of destructors */
 	uint16_t nctors;			/* Number of constructors */
 	uint16_t ndtors;			/* Number of destructors */
 #endif
 
-	/* Address environment.
-	 *
-	 * addrenv - This is the handle created by up_addrenv_create() that can be
-	 *   used to manage the tasks address space.
-	 * oldenv  - This is a value returned by up_addrenv_select() that must be
-	 *   used to restore the current address environment.
-	 */
-
-#ifdef CONFIG_ARCH_ADDRENV
-	group_addrenv_t addrenv;	/* Task group address environment */
-	save_addrenv_t oldenv;		/* Saved address environment */
-#endif
-
-#ifdef CONFIG_APP_BINARY_SEPARATION
-	struct binary_s *binp;				/* Back pointer to binary object */
-#endif
-
-#ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-	uintptr_t roalloc;			/* Allocation start for ro section */
-	size_t rosize;				/* Allocation size for ro section */
-#endif
-
-	uint16_t symtabidx;			/* Symbol table section index */
-	uint16_t strtabidx;			/* String table section index */
-	uint16_t buflen;			/* size of iobuffer[] */
-	int filfd;					/* Descriptor for the file being loaded */
-	uint16_t offset;             /* elf offset when binary header is included */
-	uint8_t compression_type;		/* Binary Compression type */
 	uintptr_t symtab;			/* Copy of symbol table */
 	uintptr_t reltab;			/* Copy of relocation table */
 	uintptr_t strtab;			/* Copy of string table */
+	uint16_t symtabidx;			/* Symbol table section index */
+	uint16_t strtabidx;			/* String table section index */
+	uint16_t buflen;			/* size of iobuffer[] */
+
+	struct binary_s *binp;			/* Back pointer to binary object */
 };
+
+#ifdef CONFIG_APP_BINARY_SEPARATION
+struct bin_addr_info_s {
+        uint32_t text_addr;
+        uint32_t text_size;
+#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
+#if defined(CONFIG_OPTIMIZE_APP_RELOAD_TIME) || defined(CONFIG_MEM_LEAK_CHECKER)
+        uint32_t rodata_addr;
+        uint32_t data_addr;
+        uint32_t bss_addr;
+#endif
+#ifdef CONFIG_MEM_LEAK_CHECKER
+        uint32_t rodata_size;
+        uint32_t data_size;
+        uint32_t bss_size;
+#endif
+#endif
+};
+typedef struct bin_addr_info_s bin_addr_info_t;
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -294,6 +270,24 @@ int elf_bind(FAR struct elf_loadinfo_s *loadinfo, FAR const struct symtab_s *exp
  ****************************************************************************/
 
 int elf_unload(struct elf_loadinfo_s *loadinfo);
+
+#ifdef CONFIG_APP_BINARY_SEPARATION
+
+/****************************************************************************
+ * Name: get_bin_addr_list
+ *
+ * Description:
+ *   Returns the pointer to the bin info address list
+ *
+ * Returned Value:
+ *   Pointer to the bin info address list
+ ****************************************************************************/
+
+bin_addr_info_t *get_bin_addr_list(void);
+
+void *elf_find_text_section_addr(int bin_idx);
+void elf_show_all_bin_section_addr(void);
+#endif
 
 #undef EXTERN
 #if defined(__cplusplus)

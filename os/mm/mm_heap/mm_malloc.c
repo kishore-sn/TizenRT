@@ -58,17 +58,12 @@
 
 #include <debug.h>
 
-#ifdef CONFIG_MM_ASSERT_ON_FAIL
-#include <assert.h>
-#ifdef CONFIG_SYSTEM_REBOOT_REASON
-#include <tinyara/reboot_reason.h>
-#endif
-#endif
 #include <tinyara/mm/mm.h>
 
 #ifdef CONFIG_DEBUG_MM_HEAPINFO
 #include  <tinyara/sched.h>
 #endif
+#include <tinyara/arch.h>
 
 #include "mm_node.h"
 
@@ -95,6 +90,40 @@
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+static void mm_free_delaylist(FAR struct mm_heap_s *heap)
+{
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+	FAR struct mm_delaynode_s *tmp;
+	irqstate_t flags;
+
+	/* Move the delay list to local */
+
+	flags = enter_critical_section();
+
+	tmp = heap->mm_delaylist[up_cpu_index()];
+	heap->mm_delaylist[up_cpu_index()] = NULL;
+
+	leave_critical_section(flags);
+
+	/* Test if the delayed is empty */
+
+	while (tmp)
+	{
+		FAR void *address;
+
+		/* Get the first delayed deallocation */
+
+		address = tmp;
+		tmp = tmp->flink;
+
+		/* The address should always be non-NULL since that was checked in the
+		 * 'while' condition above.
+		 */
+
+		mm_free(heap, address);
+	}
+#endif
+}
 
 /****************************************************************************
  * Public Functions
@@ -120,11 +149,11 @@ FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
 	void *ret = NULL;
 	int ndx;
 
-	/* Handle bad sizes */
 
-	if (size < 1) {
-		return NULL;
-	}
+	/* Free the delay list first */
+	mm_free_delaylist(heap);
+
+	/* Handle bad sizes */
 
 	if (size > MM_ALIGN_DOWN(MMSIZE_MAX) - SIZEOF_MM_ALLOCNODE) {
 		mdbg("Because of mm_allocnode, %u cannot be allocated. The maximum \
@@ -235,19 +264,7 @@ FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
 	 * to the SYSLOG.
 	 */
 
-	if (!ret) {
-#if defined(CONFIG_MM_ASSERT_ON_FAIL) && defined(CONFIG_SYSTEM_REBOOT_REASON)
-		WRITE_REBOOT_REASON(REBOOT_SYSTEM_MEMORYALLOCFAIL);
-#endif
-		mdbg("Allocation failed, size %u\n", size);
-#ifdef CONFIG_DEBUG_MM_HEAPINFO
-		heapinfo_parse_heap(heap, HEAPINFO_DETAIL_ALL, HEAPINFO_PID_ALL);
-#endif
-
-#ifdef CONFIG_MM_ASSERT_ON_FAIL
-		PANIC();
-#endif
-	} else {
+	if (ret) {
 		mvdbg("Allocated %p, size %u\n", ret, size);
 	}
 

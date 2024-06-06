@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ###########################################################################
 #
 # Copyright 2020 Samsung Electronics All Rights Reserved.
@@ -79,7 +79,7 @@ arm-none-eabi-objcopy -Obinary $BINDIR/target_pure_img2.axf $BINDIR/target_img2.
 arm-none-eabi-objcopy -j .ram_image2.entry -j .ram_image2.text -j .ram_image2.data \
 -Obinary $BINDIR/target_pure_img2.axf $BINDIR/ram_2.bin
 
-arm-none-eabi-objcopy -j .xip_image2.text \
+arm-none-eabi-objcopy -j .xip_image2.text -j .ARM.extab -j .ARM.exidx \
 -Obinary $BINDIR/target_pure_img2.axf $BINDIR/xip_image2.bin
 
 arm-none-eabi-objcopy -j .psram_image2.text -j .psram_image2.data \
@@ -118,7 +118,32 @@ function image_encryption()
 }
 image_encryption;
 
-function concatenate_binary()
+function copy_bootloader()
+{
+	if [ ! -f ${CONFIG} ];then
+		echo "No .config file"
+		exit 1
+	fi
+
+	source ${CONFIG}
+
+	if [ "${CONFIG_BOOTLOADER_DYNAMIC_PARTITIONS}" == "y" ];then
+		BL_TYPE="_dynamic_partitions"
+	else
+		BL_TYPE="_fixed_partitions"
+	fi
+
+	if [ "${CONFIG_AMEBAD_TRUSTZONE}" != "y" ];then
+		echo "========== Copy_bootloader for TZ disabled =========="
+		cp $BOOT_PATH$BL_TYPE/km4_boot_all.bin $BINDIR/km4_boot_all.bin
+	else
+		echo "========== Copy_bootloader for TZ enabled =========="
+		cp $BOOT_PATH$BL_TYPE/km4_boot_all_tz.bin $BINDIR/km4_boot_all.bin
+	fi
+	cp $BOOT_PATH$BL_TYPE/km0_boot_all.bin $BINDIR/km0_boot_all.bin
+}
+
+function concatenate_binary_without_signing()
 {
 	if [ ! -f ${CONFIG} ];then
 		echo "No .config file"
@@ -129,18 +154,36 @@ function concatenate_binary()
 
 	if [ "${CONFIG_AMEBAD_TRUSTZONE}" != "y" ];then
 		echo "========== Concatenate_binary for TZ disabled =========="
-		cp $BOOT_PATH/km0_boot_all.bin $BINDIR/km0_boot_all.bin
-		cp $BOOT_PATH/km4_boot_all.bin $BINDIR/km4_boot_all.bin
 		cat $BINDIR/xip_image2_prepend.bin $BINDIR/ram_2_prepend.bin $BINDIR/psram_2_prepend.bin > $BINDIR/km4_image2_all.bin
 		cat $GNUUTL/km0_image2_all.bin $BINDIR/km4_image2_all.bin > $BINDIR/km0_km4_image2.bin
 	else
 		echo "========== Concatenate_binary for TZ enabled =========="
-		cp $BOOT_PATH/km0_boot_all.bin $BINDIR/km0_boot_all.bin
-		cp $BOOT_PATH/km4_boot_all_tz.bin $BINDIR/km4_boot_all.bin
 		cat $GNUUTL/km0_image2_all.bin $BINDIR/km4_image2_all.bin $BINDIR/km4_image3_all-en.bin $BINDIR/km4_image3_psram-en.bin > $BINDIR/km0_km4_image2.bin
 	fi
 }
-concatenate_binary;
+
+function concatenate_binary_with_signing()
+{
+	if [ ! -f ${CONFIG} ];then
+		echo "No .config file"
+		exit 1
+	fi
+
+	source ${CONFIG}
+
+	#signing
+	echo "========== Binary SIGNING =========="
+	bash $BUILDDIR/configs/rtl8721csm/rtl8721csm_signing.sh kernel
+}
+copy_bootloader;
+if [ "${CONFIG_BINARY_SIGNING}" == "y" ];then
+	concatenate_binary_with_signing;
+
+	# Binary Signing is not support in public, so copy the non-signing binary
+	concatenate_binary_without_signing;
+else
+	concatenate_binary_without_signing;
+fi
 
 #fi
 

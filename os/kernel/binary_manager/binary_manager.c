@@ -28,16 +28,14 @@
 #include <string.h>
 #include <signal.h>
 #include <stdlib.h>
-#include <sys/boardctl.h>
 
 #include <tinyara/binary_manager.h>
+#ifdef CONFIG_BOARDCTL_RESET
+#include <sys/boardctl.h>
+#endif
+#include <tinyara/reboot_reason.h>
 #ifdef CONFIG_BINMGR_RECOVERY
 #include <tinyara/kthread.h>
-#endif
-
-#ifdef CONFIG_SYSTEM_REBOOT_REASON
-#include <tinyara/reboot_reason.h>
-#include <arch/reboot_reason.h>
 #endif
 
 #include "sched/sched.h"
@@ -47,9 +45,12 @@
 /* The largest size of messages is (CONFIG_NAME_MAX + 64) for communication with binary manager */
 #error "CONFIG_MQ_MAXMSGSIZE should be greater than (CONFIG_NAME_MAX + 64)"
 #endif
+
+#ifdef CONFIG_BINMGR_UPDATE
 #ifndef CONFIG_BOARDCTL_RESET
 /* CONFIG_BOARDCTL_RESET should be enabled for kernel binary update */
 #error "CONFIG_BOARDCTL_RESET should be enabled for kernel binary update"
+#endif
 #endif
 
 
@@ -73,6 +74,30 @@ mqd_t binary_manager_get_mqfd(void)
 #endif
 
 /****************************************************************************
+ * Name: binary_manager_reset_board
+ *
+ * Description:
+ *	 This function resets the board.
+ *
+ ****************************************************************************/
+void binary_manager_reset_board(int reboot_reason)
+{
+#ifdef CONFIG_SYSTEM_REBOOT_REASON
+	WRITE_REBOOT_REASON(reboot_reason);
+#endif
+#ifdef CONFIG_BOARDCTL_RESET
+	boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
+#else
+	(void)enter_critical_section();
+	sched_lock();
+	for (;;) {
+		lldbg("\nASSERT!! Push the reset button!\n");
+		up_mdelay(300000);  // Print the message every 5 min
+	}
+#endif
+}
+
+/****************************************************************************
  * Main Function
  ****************************************************************************/
 /****************************************************************************
@@ -92,22 +117,32 @@ int binary_manager(int argc, char *argv[])
 	struct mq_attr attr;
 	binmgr_request_t request_msg;
 	bool is_found_kpart = true;
+#ifdef CONFIG_USE_BP
+	bool is_found_bootparam = true;
+#endif
 #ifdef CONFIG_APP_BINARY_SEPARATION
 	int ret;
 	bool is_found_ubin = true;
+#endif
 
-	/* Scan user binary files and Register them */
-	binary_manager_scan_ubin_all();
+#ifdef CONFIG_USE_BP
+	if (binary_manager_update_bpinfo() != BINMGR_OK) {
+		is_found_bootparam = false;
+		goto errout_with_nobinary;
+	}
+#endif
 
+	if (binary_manager_get_kcount() <= 0 || !binary_manager_scan_kbin()) {
+		is_found_kpart = false;
+		goto errout_with_nobinary;
+	}
+
+#ifdef CONFIG_APP_BINARY_SEPARATION
 	if (binary_manager_get_ucount() <= 0) {
 		is_found_ubin = false;
 		goto errout_with_nobinary;
 	}
 #endif
-	if (binary_manager_get_kcount() <= 0 || !binary_manager_scan_kbin()) {
-		is_found_kpart = false;
-		goto errout_with_nobinary;
-	}
 
 	bmvdbg("Binary Manager STARTED\n");
 
@@ -122,7 +157,7 @@ int binary_manager(int argc, char *argv[])
 		bmvdbg("Launch fault msg sender thread with pid %d\n", ret);
 		binary_manager_set_faultmsg_sender(ret);
 	} else {
-		bmdbg("Fail to launch fault msg sender\n");
+		bmdbg("Fail to launch fault msg sender, EXIT!\n");
 		return 0;
 	}
 #endif
@@ -133,7 +168,7 @@ int binary_manager(int argc, char *argv[])
 	/* Create binary manager message queue */
 	g_binmgr_mq_fd = mq_open(BINMGR_REQUEST_MQ, O_RDWR | O_CREAT, 0666, &attr);
 	if (g_binmgr_mq_fd == (mqd_t)ERROR) {
-		bmdbg("Failed to open message queue\n");
+		bmdbg("Fail to open mq, errno %d. EXIT!\n", errno);
 		return 0;
 	}
 
@@ -141,7 +176,7 @@ int binary_manager(int argc, char *argv[])
 	/* Execute loading thread for load all binaries */
 	ret = binary_manager_execute_loader(LOADCMD_LOAD_ALL, 0);
 	if (ret != OK) {
-		bmdbg("Failed to create loading thread, EXIT\n");
+		bmdbg("Fail to create loading thread. EXIT!\n");
 		mq_close(g_binmgr_mq_fd);
 		mq_unlink(BINMGR_REQUEST_MQ);
 		return 0;
@@ -152,7 +187,7 @@ int binary_manager(int argc, char *argv[])
 		bmvdbg("Wait for message\n");
 		nbytes = mq_receive(g_binmgr_mq_fd, (char *)&request_msg, sizeof(binmgr_request_t), NULL);
 		if (nbytes <= 0) {
-			bmdbg("receive ERROR %d, errno %d, retry!\n", nbytes, errno);
+			bmdbg("Fail to receive mq, ret %d, errno %d. retry!\n", nbytes, errno);
 			continue;
 		}
 
@@ -169,19 +204,22 @@ int binary_manager(int argc, char *argv[])
 		case BINMGR_GET_INFO_ALL:
 			binary_manager_get_info_all(request_msg.requester_pid);
 			break;
-		case BINMGR_CREATE_BIN:
-			binary_manager_create_entry(request_msg.requester_pid, request_msg.data.update_bin.bin_name, request_msg.data.update_bin.version);
+		case BINMGR_GET_DOWNLOAD_PATH:
+			binary_manager_get_inactive_path(request_msg.requester_pid, request_msg.data.bin_name);
 			break;
-		case BINMGR_UPDATE:
-			if (!strncmp("kernel", request_msg.data.bin_name, BIN_NAME_MAX)) {
-#ifdef CONFIG_SYSTEM_REBOOT_REASON
-				up_reboot_reason_write(REBOOT_SYSTEM_BINARY_UPDATE);
+		case BINMGR_GET_CURRENT_PATH:
+			binary_manager_get_active_path(request_msg.requester_pid, request_msg.data.bin_name);
+			break;
+#ifdef CONFIG_USE_BP
+		case BINMGR_SETBP:
+			binary_manager_update_bootparam(request_msg.requester_pid, request_msg.data.type);
+			break;
 #endif
-				boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
-				break;
-			}
+		case BINMGR_UPDATE:
 #ifdef CONFIG_APP_BINARY_SEPARATION
-			binary_manager_execute_loader(LOADCMD_UPDATE, binary_manager_get_index_with_name(request_msg.data.bin_name));
+			binary_manager_execute_loader(LOADCMD_UPDATE, 0);
+#else
+			binary_manager_check_update();
 #endif
 			break;
 #ifdef CONFIG_APP_BINARY_SEPARATION
@@ -207,18 +245,24 @@ int binary_manager(int argc, char *argv[])
 	return 0;
 errout_with_nobinary:
 	while (1) {
-		lldbg("=============== !!ERROR!! ============== \n");
+		printf("=============== !!ERROR!! ============== \n");
+#ifdef CONFIG_USE_BP
+		if (!is_found_bootparam) {
+			printf("ERROR!! Not found user partitions because parsing a partition list is failed.\n");
+			printf("Please check whether the partition 'bootparam' exists in CONFIG_FLASH_PART_TYPE with 8K size.\n");
+		}
+#endif
 #ifdef CONFIG_APP_BINARY_SEPARATION
 		if (!is_found_ubin) {
-			lldbg("ERROR!! Not found valid user binaries.\n");
-			lldbg("Please check user binary and smartfs configurations.\n");
+			printf("ERROR!! Not found user partitions because parsing a partition list is failed.\n");
+			printf("Please check logs from configure_mtd_partitions and whether the partition 'bin' exists in CONFIG_FLASH_PART_TYPE.\n");
 		}
 #endif
 		if (!is_found_kpart) {
-			lldbg("ERROR!! Not found kernel partitions because parsing a partition list is failed.\n");
-			lldbg("Please check logs from configure_mtd_partitions and whether the partition 'kernel' exists in CONFIG_FLASH_PART_TYPE.\n");
+			printf("ERROR!! Not found kernel partitions because parsing a partition list is failed.\n");
+			printf("Please check logs from configure_mtd_partitions and whether the partition 'kernel' exists in CONFIG_FLASH_PART_TYPE.\n");
 		}
-		lldbg("Enable CONFIG_DEBUG_BINMGR_ERROR if you want to know exact reason.\n\n");
+		printf("Enable CONFIG_DEBUG_BINMGR_ERROR if you want to know exact reason.\n\n");
 		sleep(10);
 	}
 }

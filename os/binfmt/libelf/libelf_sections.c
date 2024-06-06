@@ -65,14 +65,16 @@
 #include <tinyara/kmalloc.h>
 #include <tinyara/binfmt/elf.h>
 
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
-#include <queue.h>
 #include <string.h>
 #include <tinyara/binfmt/binfmt.h>
-#endif
+#include <binary_manager/binary_manager.h>
 
 #include "libelf.h"
 
+#ifdef CONFIG_APP_BINARY_SEPARATION
+/* The list for a common binary and user binaries(CONFIG_NUM_APPS) */
+static bin_addr_info_t g_bin_addr_list[CONFIG_NUM_APPS + 1];
+#endif
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -189,9 +191,9 @@ static inline int elf_sectname(FAR struct elf_loadinfo_s *loadinfo, FAR const El
 #ifdef CONFIG_BINFMT_SECTION_UNIFIED_MEMORY
 void *elf_find_start_section_addr(struct binary_s *binp)
 {
-	int text_addr = (int)binp->alloc[ALLOC_TEXT];
-	int ro_addr = (int)binp->alloc[ALLOC_DATA];
-	int data_addr = (int)binp->alloc[ALLOC_DATA];
+	int text_addr = (int)binp->sections[BIN_TEXT];
+	int ro_addr = (int)binp->sections[BIN_RO];
+	int data_addr = (int)binp->sections[BIN_DATA];
 
 	if (text_addr <= ro_addr) {
 		if (text_addr <= data_addr) {
@@ -207,45 +209,66 @@ void *elf_find_start_section_addr(struct binary_s *binp)
 }
 #endif
 
-#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
+#ifdef CONFIG_APP_BINARY_SEPARATION
+void *elf_find_text_section_addr(int bin_idx)
+{
+	if (bin_idx >= 0 && bin_idx <= CONFIG_NUM_APPS) {
+		return (void *)g_bin_addr_list[bin_idx].text_addr;
+	}
+	return NULL;
+}
+
 void elf_save_bin_section_addr(struct binary_s *bin)
 {
-	bin_addr_info_t *bin_info;
-	bin_info = (bin_addr_info_t *)kmm_malloc(sizeof(bin_addr_info_t));
-	if (bin_info != NULL) {
-		strncpy(bin_info->bin_name, bin->bin_name, BIN_NAME_MAX);
-		bin_info->text_addr = (uint32_t)bin->alloc[ALLOC_TEXT];
+	if (bin != NULL) {
+		uint8_t bin_idx = bin->binary_idx;
 
-		binfo("[%s] text_addr : %x\n", bin_info->bin_name, bin_info->text_addr);
+		/* Save binary section address information */
+
+		g_bin_addr_list[bin_idx].text_addr = bin->sections[BIN_TEXT];
+		g_bin_addr_list[bin_idx].text_size = bin->sizes[BIN_TEXT];
+#ifdef CONFIG_SAVE_BIN_SECTION_ADDR
+		binfo("[%s] text_addr : %x\n", bin->bin_name, g_bin_addr_list[bin_idx].text_addr);
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
-		bin_info->rodata_addr = (uint32_t)bin->alloc[ALLOC_RO];
-		bin_info->data_addr = (uint32_t)bin->datastart;
-		bin_info->bss_addr = (uint32_t)bin->bssstart;
-
-		binfo("   rodata_addr : %x\n", bin_info->rodata_addr);
-		binfo("   data_addr   : %x\n", bin_info->data_addr);
-		binfo("   bss_addr    : %x\n", bin_info->bss_addr);
+		g_bin_addr_list[bin_idx].rodata_addr = bin->sections[BIN_RO];
+		g_bin_addr_list[bin_idx].rodata_size = bin->sizes[BIN_RO];
+		binfo("   rodata_addr : %x\n", g_bin_addr_list[bin_idx].rodata_addr);
 #endif
-		sq_addlast((sq_entry_t *)bin_info, &g_bin_addr_list);
+
+#if defined(CONFIG_OPTIMIZE_APP_RELOAD_TIME) || defined(CONFIG_MEM_LEAK_CHECKER)
+		g_bin_addr_list[bin_idx].data_addr = bin->sections[BIN_DATA];
+		g_bin_addr_list[bin_idx].bss_addr = bin->sections[BIN_BSS];
+		g_bin_addr_list[bin_idx].data_size = bin->sizes[BIN_DATA];
+		g_bin_addr_list[bin_idx].bss_size = bin->sizes[BIN_BSS];
+		binfo("   data_addr   : %x\n", g_bin_addr_list[bin_idx].data_addr);
+		binfo("   bss_addr    : %x\n", g_bin_addr_list[bin_idx].bss_addr);
+#endif
+#endif
 	} else {
-		berr("ERROR : Failed to allocate for bin symbol.\n");
+		berr("ERROR : Failed to save bin section addresses\n");
 	}
 }
 
-void elf_delete_bin_section_addr(struct binary_s *bin)
+void elf_delete_bin_section_addr(uint8_t bin_idx)
 {
-	bin_addr_info_t *info;
-	info = (bin_addr_info_t *)sq_peek(&g_bin_addr_list);
-	while (info) {
-		if (strncmp(info->bin_name, bin->bin_name, BIN_NAME_MAX) == 0) {
-			sq_rem((sq_entry_t *)info, &g_bin_addr_list);
-			kmm_free(info);
-			break;
+	/* Clear binary section address information */
+
+	memset(&g_bin_addr_list[bin_idx], 0, sizeof(bin_addr_info_t));
+}
+
+void elf_show_all_bin_section_addr(void)
+{
+	int bin_idx;
+	lldbg_noarg("===========================================================\n");
+	lldbg_noarg("Loading location information\n");
+	lldbg_noarg("===========================================================\n");	
+	for (bin_idx = 0; bin_idx <= CONFIG_NUM_APPS; bin_idx++) {
+		if (g_bin_addr_list[bin_idx].text_addr != 0) {
+			lldbg("[%s] Text Addr : %p, Text Size : %u\n", BIN_NAME(bin_idx), g_bin_addr_list[bin_idx].text_addr, g_bin_addr_list[bin_idx].text_size);
 		}
-		info = (FAR void *)sq_next((FAR sq_entry_t *)info);
 	}
 }
-#endif
+#endif /* CONFIG_APP_BINARY_SEPARATION */
 
 /****************************************************************************
  * Name: elf_loadshdrs
@@ -347,4 +370,19 @@ int elf_findsection(FAR struct elf_loadinfo_s *loadinfo, FAR const char *sectnam
 	/* We failed to find a section with this name. */
 
 	return -ENOENT;
+}
+
+/****************************************************************************
+ * Name: get_bin_addr_list
+ *
+ * Description:
+ *   Returns the pointer to the bin info address list
+ *
+ * Returned Value:
+ *   Pointer to the bin info address list
+ ****************************************************************************/
+
+bin_addr_info_t *get_bin_addr_list()
+{
+	return g_bin_addr_list;
 }

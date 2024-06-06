@@ -62,15 +62,17 @@ enum mpu_region_usages_e {
 
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
 /* Separate three MPU regions (text, ro and rw) to optimize reloading time */
-#define MPU_NUM_REGIONS     3
+#define NUM_APP_REGIONS     3
 #else
 /* Just a MPU region for all of section data */
-#define MPU_NUM_REGIONS     1
+#define NUM_APP_REGIONS     1
 #endif
 
-#ifdef CONFIG_ARMV8M_MPU
-#define MPU_ALIGNMENT_BYTES    32
-#define MPU_ALIGN_UP(a)                (((a) + MPU_ALIGNMENT_BYTES - 1) & ~(MPU_ALIGNMENT_BYTES - 1))
+#ifdef CONFIG_ARMV7M_MPU
+#define MPU_ALIGN_UP(a)			(1 << mpu_log2regionceil(0, a))
+#elif defined(CONFIG_ARMV8M_MPU)
+#define MPU_ALIGNMENT_BYTES		32
+#define MPU_ALIGN_UP(a)			(((a) + MPU_ALIGNMENT_BYTES - 1) & ~(MPU_ALIGNMENT_BYTES - 1))
 #endif
 
 /********************************************************************************
