@@ -1,4 +1,17 @@
 /* == "version" + "Realtek git version" + "compile date" + "compile time" == */
+
+== version 2eb067f 2024/05/08-12:24:28 ==
+1. Enable GPIO channel A as wakeup interrupt src
+2. Add wakeup src information
+
+== version d08ed534 2024/05/31-17:08:16 ==
+1.	Add feature in fault handler to indicate KM4/KM0 fault
+
+== version 972ebbee 2024/05/27-19:24:11 ==
+1.	Add support for scanning up to 6 specific APs
+	- If the channel of any of the APs to scan is set to 0, scan will be on all valid channels
+2.	Add scan option to support scanning specific APs and report other APs responding to NULL probe req
+
 == version 4443689 2024/05/24-16:08:04 ==
 1.	Fix km4 crash when running wificsi example
 

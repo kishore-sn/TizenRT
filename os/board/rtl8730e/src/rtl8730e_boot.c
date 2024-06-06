@@ -225,7 +225,7 @@ void board_gpio_initialize(void)
 		u32 pinmode;
 		u32 pinpull;
 	} pins[] = {
-
+				{PA_23, PIN_INPUT, PullNone},
 		/* NOTE: Do not open pins not for GPIO usage. E.g uart,SPI pins
 		Loguart pins
 		*/
@@ -298,6 +298,9 @@ void board_gpio_initialize(void)
 		lower = amebasmart_gpio_lowerhalf(pins[i].pinname, pins[i].pinmode, pins[i].pinpull);
 		gpio_register(pins[i].pinname, lower);
 	}
+#ifdef CONFIG_PM
+	gpio_pminitialize();
+#endif
 #endif
 }
 
@@ -383,6 +386,20 @@ void app_ftl_init(void)
  ****************************************************************************/
 
 #ifdef CONFIG_BOARD_INITIALIZE
+
+static gtimer_t g_timer_np_lp;
+
+static void np_lp_status_timer_hdl(void)
+{
+	ASSERT(BKUP_Read(BKUP_REG2) != 0x1);
+}
+
+static void init_np_lp_status_timer(void)
+{
+	gtimer_init(&g_timer_np_lp, TIMER2);
+	gtimer_start_periodical(&g_timer_np_lp, CONFIG_AMEBASMART_NP_LP_CHECK_INTERVAL, (void *)np_lp_status_timer_hdl, (uint32_t)&g_timer_np_lp);
+}
+
 void board_initialize(void)
 {
 
@@ -397,7 +414,9 @@ void board_initialize(void)
 	ipc_table_init(IPCAP_DEV);
 
 	/* init console */
+#ifndef CONFIG_PLATFORM_TIZENRT_OS
 	shell_init_rom(0, 0);
+#endif
 	amebasmart_mount_partitions();
 	board_gpio_initialize();
 	board_i2c_initialize();
@@ -407,6 +426,11 @@ void board_initialize(void)
 #ifdef CONFIG_LCD_ST7789
 	rtl8730_st7789_initialize();
 #endif
+
+#if defined(CONFIG_LCD_ST7785) || defined(CONFIG_LCD_ST7701)
+        rtl8730_lcdc_initialize();
+#endif
+
 
 #ifdef CONFIG_WATCHDOG
 	amebasmart_wdg_initialize(CONFIG_WATCHDOG_DEVPATH, 5000);
@@ -437,12 +461,14 @@ void board_initialize(void)
 	app_ftl_init();
 #endif
 
+	/* Start timer to check KM4/KM0 status */
+	init_np_lp_status_timer();
 #ifdef CONFIG_AMEBASMART_WIFI
 	wlan_initialize();
 #endif
 
 	/* RTK ToDo: move the KM4 version print to the KM4 part */
-	char km0_application_rev_temp[] = "km0_application_ver_756ad947_2024/04/30-17:54:41";
+	char km0_application_rev_temp[] = "km0_application_ver_2eb067f_2024/05/08-12:24:28";
 	lldbg("KM4_version %s\n", km0_application_rev_temp);
 
 #ifdef CONFIG_AUDIO_ALC1019

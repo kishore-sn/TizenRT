@@ -55,7 +55,7 @@ void pm_wakehandler(clock_t missing_tick)
 {
 	irqstate_t flags  = enter_critical_section();
 
-	pmllvdbg("missing_tick: %d\n", missing_tick);
+	pmllvdbg("missing_tick: %llu\n", missing_tick);
 
 	if (missing_tick > 0) {
 		clock_timer_nohz((clock_t)missing_tick);
@@ -64,6 +64,9 @@ void pm_wakehandler(clock_t missing_tick)
 	 	* but we pass unsigned int to it */
 		pm_timer_update(missing_tick);
 	}
+
+	/* After wakeup change PM State to STANDBY */
+	pm_changestate(PM_STANDBY);
 
 	leave_critical_section(flags);
 }
