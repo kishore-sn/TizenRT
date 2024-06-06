@@ -53,6 +53,7 @@
 #include "cp15_cacheops.h"
 #include "gic.h"
 #include "sched/sched.h"
+#include "smp.h"
 
 #ifdef CONFIG_SMP
 
@@ -111,7 +112,15 @@ int arm_start_handler(int irq, void *context, void *arg)
 {
   struct tcb_s *tcb = this_task();
 
-  svdbg("CPU%d Started\n", this_cpu());
+  lldbg("CPU%d Started\n", this_cpu());
+
+  	FAR dq_queue_t *list = &g_assignedtasks[1];
+	struct tcb_s *next;
+	lldbg("List of tasks in assigned list of core1: ");
+	for (next = (FAR struct tcb_s *)list->head; next; next = next->flink) {
+		lldbg_noarg("%s ", next->name);	
+	}
+	lldbg_noarg("\n");
 
 #ifdef CONFIG_SCHED_INSTRUMENTATION
   /* Notify that this CPU has started */
@@ -132,6 +141,7 @@ int arm_start_handler(int irq, void *context, void *arg)
    * be the CPUs NULL task.
    */
 
+  lldbg("Restore state pid = %d name = %s\n", tcb->pid, tcb->name);
   arm_restorestate(tcb->xcp.regs);
   return OK;
 }
@@ -165,7 +175,7 @@ int arm_start_handler(int irq, void *context, void *arg)
 
 int up_cpu_start(int cpu)
 {
-  svdbg("Starting CPU%d\n", cpu);
+  lldbg("Starting CPU%d\n", cpu);
 
   DEBUGASSERT(cpu >= 0 && cpu < CONFIG_SMP_NCPUS && cpu != this_cpu());
 
@@ -175,8 +185,13 @@ int up_cpu_start(int cpu)
   sched_note_cpu_start(this_task(), cpu);
 #endif
 
+#ifdef CONFIG_CPU_HOTPLUG
+  up_set_secondary_cpu_state(cpu, CPU_RUNNING);
+#endif
+
   /* Execute SGI1 */
 
+  lldbg("sending SGI1 to core 1\n");
   return arm_cpu_sgi(GIC_IRQ_SGI1, (1 << cpu));
 }
 

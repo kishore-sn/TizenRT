@@ -133,7 +133,7 @@ void amebasmart_cpu_enable(void)
 void arm_cpu_boot(int cpu)
 {
   /* Enable SMP cache coherency for the CPU */
-
+  lldbg("Enter cpu = %d\n", cpu);
   arm_enable_smp(cpu);
 
   /* Initialize the FPU */

@@ -75,12 +75,14 @@ void os_idle_trampoline(void)
 
 	/* Enter the IDLE loop */
 
-	slldbg("CPU%d: Beginning Idle Loop\n", this_cpu());
+	lldbg("CPU%d: Beginning Idle Loop\n", this_cpu());
 
 	for (; ; ) {
 		/* Perform any processor-specific idle state operations */
-
-		up_idle();
+		/* Let primary core control the PM idle loop, other 
+		   cores may stay at WFE and wait for signal from primary core
+		*/
+		SP_WFE();
 	}
 }
 
@@ -118,7 +120,7 @@ int os_smp_start(void)
 
 		ret = up_cpu_start(cpu);
 		if (ret < 0) {
-			sdbg("ERROR: Failed to start CPU%d: %d\n", cpu, ret);
+			lldbg("ERROR: Failed to start CPU%d: %d\n", cpu, ret);
 			return ret;
         	}
 	}

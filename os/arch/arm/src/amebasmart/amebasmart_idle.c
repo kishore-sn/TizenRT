@@ -36,6 +36,7 @@
 
 #ifdef CONFIG_SMP
 #include "gic.h"
+#include "smp.h"
 #endif
 
 /****************************************************************************
@@ -83,18 +84,26 @@ static void up_idlepm(void)
 		   			   Then, we can do vPortSecondaryOff() for SMP case (ie. shutdown secondary core)
 		*/
 		switch (newstate) {
-			case PM_NORMAL:
-				/* In PM_NORMAL, we have nothing to do, set core to WFE */
-				__asm(" WFE");
-				break;
-			case PM_IDLE:
-				/* In PM_IDLE, we have nothing to do, set core to WFE */
-				__asm(" WFE");
-				break;
-			case PM_STANDBY:
-				/* In PM_STANDBY, we have nothing to do, set core to WFE */
-				__asm(" WFE");
-				break;
+                        case PM_NORMAL:
+#ifdef CONFIG_PM_DVFS
+                                lldbg("PM_NORMAL dvfs 0\n");
+                                up_set_dvfs(0);
+#endif
+                                break;
+                        case PM_IDLE:
+#ifdef CONFIG_PM_DVFS
+                                lldbg("PM_IDLE dvfs 1\n");
+                                up_set_dvfs(1);
+#endif
+                                break;
+                        case PM_STANDBY:
+                                /* Lower down cpu frequency, as we might go to sleep soon */
+#ifdef CONFIG_PM_DVFS
+                                lldbg("PM_STANDBY dvfs 3\n");
+                                up_set_dvfs(3);
+#endif
+                                break;
+
 			case PM_SLEEP:
 				/* TODO: When enabling SMP, PM state coherency should be verified for 
 				   primary and secondary cores. Each of the cores has it's own idle task,
@@ -102,10 +111,16 @@ static void up_idlepm(void)
 				   EG: Secondary core should be in hotplug mode, primary core should check
 				   the secondary core state before going to sleep
 				*/
-#ifndef CONFIG_SMP
-				up_set_pm_timer();
-#endif
+				lldbg("PM_SLEEP case\n");
 				if (up_cpu_index() == 0) {
+#ifdef CONFIG_SMP
+/* For CPU_RUNNING case 
+CPU_RUNNING:
+Send SGI for core 1 to do task migration and shut down, we will expect that to be handled
+nicely before the next cycle of core 0 reaches
+*/
+RESLEEP_1:
+#endif
 					/* mask sys tick interrupt*/
 					arm_arch_timer_int_mask(1);
 					up_timer_disable();
@@ -114,28 +129,34 @@ static void up_idlepm(void)
 					   If it is one of the wakeup sources, it will recognized but will not be serviced
 					   If it is not one of the wakeup sources, it will not be recognized at all
 					*/
+#ifdef CONFIG_SMP
+/* For CPU_WAKE_FROM_SLEEP case 
+CPU_WAKE_FROM_SLEEP:
+Theoretically, we will not expect PM state to drop to sleep again in such short time span
+(ie. The time interval between core0 trigger core 1 to wakeup)
+But in case that happens, we have to introduce some strategy to handle that
+*/
+RESLEEP_2:
+#endif
 					if (tizenrt_ready_to_sleep()) {
 #ifdef CONFIG_SMP
 						/*PG flow */
 						if (pmu_get_sleep_type() == SLEEP_PG) {
-							/* CPU1 just come back from pg, so can't sleep here */
-							if (pmu_get_secondary_cpu_state(1) == CPU1_WAKE_FROM_PG) {
-								goto EXIT;
-							}
-
 							/* CPU1 is in task schedular, tell CPU1 to enter hotplug */
-							if (pmu_get_secondary_cpu_state(1) == CPU1_RUNNING) {
+							if (up_get_secondary_cpu_state(1) == CPU_RUNNING) {
 								/* CPU1 may in WFI idle state. Wake it up to enter hotplug itself */
 								up_irq_enable();
-								//arm_gic_raise_softirq(1, 0);
+								lldbg("Send SGI4 to core1\n");
+								arm_cpu_sgi(GIC_IRQ_SGI4, (1 << 1));
 								arm_arch_timer_int_mask(0);
+								up_timer_enable();
 								DelayUs(100);
-								goto EXIT;
+								goto RESLEEP_1;
 							}
-
-							/* For SMP case, timer should be set after confirming secondary core enter hotplug mode */
-							if (pmu_get_secondary_cpu_state(1) == CPU1_HOTPLUG) {
-								up_set_pm_timer();
+							/* CPU1 just come back from pg, so can't sleep here */
+							if (up_get_secondary_cpu_state(1) == CPU_WAKE_FROM_SLEEP) {
+								lldbg("Secondary core just woke from PG sleep!\n");
+								goto RESLEEP_2;
 							}
 							/* CG flow */
 						} else {
@@ -144,7 +165,7 @@ static void up_idlepm(void)
 							}
 						}
 #endif
-						/* Interrupt source from BT/UART will wake cpu up, just leave expected idle time as 0
+						/* Interrupt source will wake cpu up, just leave expected idle time as 0
 						Enter sleep mode for AP */
 						configPRE_SLEEP_PROCESSING(xModifiableIdleTime);
 						/* When wake from pg, arm timer has been reset, so a new compare value is necessary to
@@ -169,35 +190,11 @@ EXIT:
 					/* Re-enable interrupts and sys tick*/
 					up_irq_enable();
 				}
-				/* If secondary core idle loop enters here, it should guarantee it has entered hotplug state*/
-				else if (up_cpu_index() == 1) {
-					if (pmu_get_sleep_type() == SLEEP_PG) {
-						if (tizenrt_ready_to_sleep()) {
-							/* CPU1 will enter hotplug state. Raise a task yield to migrate its task */
-							pmu_set_secondary_cpu_state(1, CPU1_HOTPLUG);
-						}
-					}
-
-					flags = irqsave();
-					__asm("	DSB");
-					__asm("	WFI");
-					__asm("	ISB");
-					up_irq_enable();
-#ifdef CONFIG_SMP
-					goto EXIT2;
-#endif
-				}
 				/* Note: Wakeup from sleep, change the state back to PM_NORMAL 
 				   At this point, we do not need to do anything, as the
 				   wakeup callback handler will invoke pm_activity()
 				*/
 
-/* TODO: This exit is for secondary core
-   After 2nd core entered hotplug mode, TizenRT should remove the idle task for 2nd core
-   Revisit here to see if anything else need to be done */
-#ifdef CONFIG_SMP
-EXIT2:
-#endif
 /* If state transition is rejected, exit directly*/
 REJECTED:
 				break;
