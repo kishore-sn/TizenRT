@@ -56,10 +56,70 @@
 
 #include <tinyara/config.h>
 #include <stdio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <stdlib.h>
 
 /****************************************************************************
  * hello_main
  ****************************************************************************/
+static pthread_addr_t run_smp_gate_operation(pthread_addr_t parameter)
+{
+	struct timespec before;
+	struct timespec after;
+
+#if 0
+	printf("Running file write test on cpu %d\n", up_cpu_index());
+	u8* buf;
+
+	buf = malloc(1024*1024*5);
+
+	(void)clock_gettime(CLOCK_REALTIME, &before);
+
+	/* do flash op */
+	int fd = open("/mnt/test.txt", O_RDWR | O_CREAT);
+	write(fd, buf, 1024*1024*5);
+	close(fd);
+
+	(void)clock_gettime(CLOCK_REALTIME, &after);
+	printf("BEFORE: (%lu sec, %lu nsec)\n",
+		   (unsigned long)before.tv_sec, (unsigned long)before.tv_nsec);
+	printf("AFTER:  (%lu sec, %lu nsec)\n",
+		   (unsigned long)after.tv_sec, (unsigned long)after.tv_nsec);
+	printf("Time taken = %d secs\n", after.tv_sec - before.tv_sec);
+#else
+		int thiscpu = up_cpu_index();
+		int gatecpu = thiscpu - 1 == 0 ? 0 : 1;
+		printf("Gating cpu%d\n", gatecpu);	
+		up_set_gating_flag_status(gatecpu, 1);
+		up_cpu_gating(gatecpu);
+		//printf("Sleep on cpu%d\n", thiscpu);
+		(void)clock_gettime(CLOCK_REALTIME, &before);
+		sleep(5);
+		(void)clock_gettime(CLOCK_REALTIME, &after);
+		printf("Wake up cpu%d\n", thiscpu);
+		printf("Time taken = %d secs\n", after.tv_sec - before.tv_sec);
+		up_set_gating_flag_status(gatecpu, 0);
+#endif
+}
+
+#define CPU_ZERO(s) do { *(s) = 0; } while (0)
+#define CPU_SET(c,s) do { *(s) |= (1 << (c)); } while (0)
+int test_smp_gate(int argc, char** argv) {
+
+	pthread_attr_t attr;
+	int ret = pthread_attr_init(&attr);
+ 
+	CPU_ZERO(&attr.affinity);
+
+	CPU_SET(atoi(argv[1]), &attr.affinity);
+ 
+	pid_t thread_id;
+ 
+	ret = pthread_create(&thread_id, &attr, run_smp_gate_operation, NULL);
+
+	return 0;
+}
 
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
@@ -68,5 +128,11 @@ int hello_main(int argc, char *argv[])
 #endif
 {
 	printf("Hello, World!!\n");
+
+
+	if (argc > 1) {
+		test_smp_gate(argc, argv);
+	}
+
 	return 0;
 }
